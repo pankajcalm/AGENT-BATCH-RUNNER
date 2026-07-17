@@ -24,7 +24,7 @@ public static class PromptTaskDiagnosticsMapper
         }
 
         if (runEvent.Kind is RunEventKind.AgentCompleted or RunEventKind.AgentFailed or RunEventKind.AgentTimedOut or
-            RunEventKind.AgentRateLimited or
+            RunEventKind.AgentRateLimited or RunEventKind.AgentToolchainFailed or
             RunEventKind.VerificationPassed or RunEventKind.VerificationFailed or RunEventKind.VerificationTimedOut)
         {
             task.TimedOutText = runEvent.TimedOut ? "True" : "False";
@@ -62,7 +62,7 @@ public static class PromptTaskDiagnosticsMapper
         }
 
         if ((runEvent.Kind is RunEventKind.AgentCompleted or RunEventKind.AgentFailed or RunEventKind.AgentTimedOut or
-            RunEventKind.AgentRateLimited) &&
+            RunEventKind.AgentRateLimited or RunEventKind.AgentToolchainFailed) &&
             !string.IsNullOrWhiteSpace(runEvent.Path))
         {
             task.AgentOutputFilePath = runEvent.Path;

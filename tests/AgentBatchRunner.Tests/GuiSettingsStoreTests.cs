@@ -31,7 +31,7 @@ public sealed class GuiSettingsStoreTests
         var loaded = store.Load();
 
         Assert.Equal(promptFile, loaded.LastPromptFilePath);
-        Assert.Equal("codex", loaded.LastSelectedAgent);
+        Assert.Equal("Global override: codex", loaded.LastSelectedAgent);
         Assert.Equal(1440, loaded.WindowWidth);
         Assert.Equal(900, loaded.WindowHeight);
         Assert.Equal(100, loaded.WindowLeft);
@@ -48,7 +48,7 @@ public sealed class GuiSettingsStoreTests
         var settings = store.Load();
 
         Assert.Null(settings.LastPromptFilePath);
-        Assert.Equal("dryrun", settings.LastSelectedAgent);
+        Assert.Equal(AgentRoutingMode.FromYaml, settings.LastSelectedAgent);
         Assert.Empty(settings.RecentPromptFiles);
     }
 
@@ -96,7 +96,7 @@ public sealed class GuiSettingsStoreTests
     }
 
     [Fact]
-    public void Constructor_RestoresLastSelectedAgentFromSettings()
+    public void Constructor_StartsFromYamlEvenWhenExplicitOverrideWasStored()
     {
         using var workspace = TestWorkspace.Create();
         var settingsPath = Path.Combine(workspace.Root, "gui-settings.json");
@@ -105,7 +105,7 @@ public sealed class GuiSettingsStoreTests
 
         var viewModel = new MainWindowViewModel(Dispatcher.CurrentDispatcher, store);
 
-        Assert.Equal("codex", viewModel.SelectedAgent);
+        Assert.Equal(AgentRoutingMode.FromYaml, viewModel.SelectedAgent);
     }
 
     [Fact]
@@ -131,6 +131,7 @@ public sealed class GuiSettingsStoreTests
 
         Assert.Contains("codex: Blocked until", viewModel.CodexAvailabilityText);
         Assert.Contains("Blocked until", viewModel.SelectedAgentAvailabilityText);
+        Assert.Equal("Global override: codex", viewModel.SelectedAgent);
     }
 
     private static string CreatePromptFile(string directory, string fileName)

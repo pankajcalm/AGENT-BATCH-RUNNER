@@ -123,4 +123,79 @@ public sealed class PromptFileLoaderTests
         Assert.Contains(validation.Errors, e => e.Contains("agentTimeoutSeconds", StringComparison.OrdinalIgnoreCase));
         Assert.Contains(validation.Errors, e => e.Contains("verifyTimeoutSeconds", StringComparison.OrdinalIgnoreCase));
     }
+
+    [Fact]
+    public async Task LoadAndValidate_ExistingYamlWithoutToolchainFields_RemainsValid()
+    {
+        using var temp = TestWorkspace.Create();
+        var yamlPath = Path.Combine(temp.Root, "legacy-prompts.yaml");
+        await File.WriteAllTextAsync(
+            yamlPath,
+            $$"""
+            project: Legacy
+            repoPath: {{temp.Root}}
+            defaultAgent: dryrun
+            prompts:
+              - id: P001
+                title: Legacy task
+                prompt: Build it.
+                verify: []
+            """);
+        var loader = new PromptFileLoader();
+
+        var config = await loader.LoadAsync(yamlPath);
+        var validation = loader.Validate(config);
+
+        Assert.True(validation.IsValid, string.Join(Environment.NewLine, validation.Errors));
+        Assert.Equal("0.144.5", config.MinimumCodexVersion);
+        Assert.Null(config.CodexExecutablePath);
+        Assert.Null(config.ClaudeExecutablePath);
+    }
+
+    [Fact]
+    public void Validate_RejectsPromptWithNoAgentAndNoDefaultAgent()
+    {
+        var config = new BatchConfig
+        {
+            Project = "Demo",
+            RepoPath = @"C:\repo",
+            DefaultAgent = null,
+            Prompts = [new PromptTask { Id = "P001", Title = "Task", Prompt = "Do it." }]
+        };
+
+        var validation = new PromptFileLoader().Validate(config);
+
+        Assert.False(validation.IsValid);
+        Assert.Contains(validation.Errors, error => error.Contains("no agent", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public async Task LoadAsync_PreservesUnicodeAndMultilinePrompt()
+    {
+        using var temp = TestWorkspace.Create();
+        var yamlPath = Path.Combine(temp.Root, "unicode-prompts.yaml");
+        var emDash = "\u2014";
+        var enDash = "\u2013";
+        var smartQuoteOpen = "\u201c";
+        var smartQuoteClose = "\u201d";
+        var yaml =
+            $"project: Unicode{Environment.NewLine}" +
+            $"repoPath: {temp.Root}{Environment.NewLine}" +
+            $"defaultAgent: dryrun{Environment.NewLine}" +
+            $"prompts:{Environment.NewLine}" +
+            $"  - id: P001{Environment.NewLine}" +
+            $"    title: Product charter {emDash} phase 0{Environment.NewLine}" +
+            $"    prompt: |{Environment.NewLine}" +
+            $"      Support 10{enDash}20 teams.{Environment.NewLine}" +
+            $"      Preserve {smartQuoteOpen}quoted text{smartQuoteClose}.{Environment.NewLine}" +
+            $"    verify: []{Environment.NewLine}";
+        await AgentBatchRunner.Infrastructure.Utf8File.WriteAllTextAsync(yamlPath, yaml);
+
+        var config = await new PromptFileLoader().LoadAsync(yamlPath);
+
+        Assert.Contains(emDash, config.Prompts[0].Title);
+        Assert.Contains($"10{enDash}20", config.Prompts[0].Prompt);
+        Assert.Contains($"{smartQuoteOpen}quoted text{smartQuoteClose}", config.Prompts[0].Prompt);
+        Assert.Contains('\n', config.Prompts[0].Prompt);
+    }
 }

@@ -26,7 +26,11 @@ public sealed class AgentExecutionResult
 
     public string? RateLimitReason { get; set; }
 
-    public bool Succeeded => ExitCode == 0 && !IsRateLimited;
+    public bool IsToolchainFailure { get; set; }
+
+    public string? ToolchainFailureReason { get; set; }
+
+    public bool Succeeded => ExitCode == 0 && !IsRateLimited && !IsToolchainFailure;
 
     public string CombinedOutput
     {

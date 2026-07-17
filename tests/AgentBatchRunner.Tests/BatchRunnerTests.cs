@@ -385,10 +385,218 @@ public sealed class BatchRunnerTests
         Assert.True(File.Exists(Path.Combine(repo.Root, ".agentbatchrunner", "runs", result.RunId, "final-report.md")));
     }
 
+    [Fact]
+    public async Task RunAsync_FromYaml_ExecutesMixedAgentsInPromptOrder()
+    {
+        using var repo = TestWorkspace.CreateGitRepository();
+        var factory = new RecordingRoutingAgentFactory();
+        var config = new BatchConfig
+        {
+            Project = "Mixed routing",
+            RepoPath = repo.Root,
+            DefaultAgent = "dryrun",
+            DefaultMaxRetries = 1,
+            Prompts =
+            [
+                new PromptTask { Id = "P001", Title = "Claude task", Agent = "claude", Prompt = "One", Verify = ["exit 0"] },
+                new PromptTask { Id = "P002", Title = "Codex task", Agent = "codex", Prompt = "Two", Verify = ["exit 0"] }
+            ]
+        };
+
+        var result = await CreateBatchRunner(factory).RunAsync(config, new RunOptions());
+
+        Assert.Equal(["claude", "codex"], factory.CreatedAgents);
+        Assert.Equal(["claude", "codex"], result.Tasks.Select(task => task.Agent));
+        Assert.All(result.Tasks, task => Assert.Equal(RunStatus.Succeeded, task.Status));
+        Assert.Null(result.AgentOverride);
+    }
+
+    [Fact]
+    public async Task RunAsync_Resume_UsesCentralRoutingForRemainingPrompt()
+    {
+        using var repo = TestWorkspace.CreateGitRepository();
+        var factory = new RecordingRoutingAgentFactory();
+        var config = new BatchConfig
+        {
+            Project = "Resume routing",
+            RepoPath = repo.Root,
+            DefaultAgent = "dryrun",
+            DefaultMaxRetries = 1,
+            Prompts =
+            [
+                new PromptTask { Id = "P001", Title = "Done", Agent = "claude", Prompt = "One", Verify = ["exit 0"] },
+                new PromptTask { Id = "P002", Title = "Remaining", Agent = "codex", Prompt = "Two", Verify = ["exit 0"] }
+            ]
+        };
+        var existing = new RunResult
+        {
+            RunId = "20260717-120000",
+            Project = config.Project,
+            RepoPath = repo.Root,
+            StartedAt = DateTimeOffset.Now,
+            Tasks =
+            [
+                new TaskRunResult { Id = "P001", Title = "Done", Agent = "claude", Status = RunStatus.Succeeded }
+            ]
+        };
+
+        var result = await CreateBatchRunner(factory).RunAsync(
+            config,
+            new RunOptions
+            {
+                RunId = existing.RunId,
+                ExistingResult = existing,
+                SkipPromptIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "P001" }
+            });
+
+        Assert.Equal(["codex"], factory.CreatedAgents);
+        Assert.Equal("codex", result.Tasks.Single(task => task.Id == "P002").Agent);
+    }
+
+    [Fact]
+    public async Task RunAsync_PreflightFailure_StartsNoPromptsOrCheckpointsAndReportsOneBlocker()
+    {
+        using var repo = TestWorkspace.CreateGitRepository();
+        var factory = new RecordingRoutingAgentFactory();
+        var preflight = new StaticPreflightService(new AgentPreflightResult
+        {
+            Succeeded = false,
+            FailureReason = "Codex version 0.57.0 is below the required minimum 0.144.5.",
+            Toolchains =
+            [
+                new AgentToolchainInfo
+                {
+                    AgentName = "codex",
+                    ExecutablePath = @"C:\stale\codex.exe",
+                    Version = "0.57.0",
+                    Status = AgentPreflightStatus.Failed,
+                    FailureReason = "Version is too old."
+                }
+            ]
+        });
+        var config = new BatchConfig
+        {
+            Project = "Blocked",
+            RepoPath = repo.Root,
+            DefaultAgent = "codex",
+            Prompts =
+            [
+                new PromptTask { Id = "P001", Title = "One", Prompt = "One", Verify = ["exit 0"] },
+                new PromptTask { Id = "P002", Title = "Two", Prompt = "Two", Verify = ["exit 0"] }
+            ]
+        };
+
+        var result = await CreateBatchRunner(factory, preflightService: preflight)
+            .RunAsync(config, new RunOptions());
+
+        Assert.Equal(RunFailureKind.PreflightFailed, result.FailureKind);
+        Assert.Empty(factory.CreatedAgents);
+        Assert.Equal(2, result.Skipped);
+        Assert.All(result.Tasks, task =>
+        {
+            Assert.Equal(RunStatus.Skipped, task.Status);
+            Assert.Empty(task.Attempts);
+        });
+        Assert.Empty(repo.Git("branch --list agentbatchrunner/*"));
+        var runDirectory = Path.Combine(repo.Root, ".agentbatchrunner", "runs", result.RunId);
+        Assert.False(Directory.Exists(Path.Combine(runDirectory, "tasks")));
+        Assert.True(File.Exists(Path.Combine(runDirectory, "final-report.md")));
+        var report = await File.ReadAllTextAsync(Path.Combine(runDirectory, "final-report.md"));
+        Assert.Contains("PreflightFailed", report);
+        Assert.Contains("0.57.0", report);
+    }
+
+    [Fact]
+    public async Task RunAsync_RequiresNewerCodex_IsNonRetryableAndStopsRemainingPrompts()
+    {
+        using var repo = TestWorkspace.CreateGitRepository();
+        var adapter = new CountingAgentAdapter("codex", new AgentExecutionResult
+        {
+            AgentName = "codex",
+            Command = "codex exec prompt",
+            ExitCode = 1,
+            StandardError = "The 'example-model' model requires a newer version of Codex."
+        });
+        var executablePath = @"C:\Program Files\OpenAI\Codex\codex.exe";
+        var preflight = new StaticPreflightService(new AgentPreflightResult
+        {
+            Succeeded = true,
+            Toolchains =
+            [
+                new AgentToolchainInfo
+                {
+                    AgentName = "codex",
+                    ExecutablePath = executablePath,
+                    Version = "0.144.5",
+                    Status = AgentPreflightStatus.Succeeded
+                }
+            ]
+        });
+        var config = new BatchConfig
+        {
+            Project = "Runtime toolchain failure",
+            RepoPath = repo.Root,
+            DefaultAgent = "codex",
+            DefaultMaxRetries = 3,
+            Prompts =
+            [
+                new PromptTask { Id = "P001", Title = "First", Prompt = "One", Verify = ["exit 0"] },
+                new PromptTask { Id = "P002", Title = "Second", Prompt = "Two", Verify = ["exit 0"] }
+            ]
+        };
+
+        var result = await CreateBatchRunner(
+                new TestAgentAdapterFactory(adapter),
+                preflightService: preflight)
+            .RunAsync(config, new RunOptions());
+
+        Assert.Equal(RunFailureKind.ToolchainFailure, result.FailureKind);
+        Assert.Equal(1, adapter.CallCount);
+        Assert.Equal(executablePath, adapter.LastExecutablePath);
+        var failedTask = result.Tasks.Single(task => task.Id == "P001");
+        Assert.Equal(RunStatus.ToolchainFailure, failedTask.Status);
+        Assert.Single(failedTask.Attempts);
+        Assert.Equal(RunStatus.ToolchainFailure, failedTask.Attempts[0].Status);
+        var skippedTask = result.Tasks.Single(task => task.Id == "P002");
+        Assert.Equal(RunStatus.Skipped, skippedTask.Status);
+        Assert.Empty(skippedTask.Attempts);
+        Assert.Equal(0, result.NeedsHumanReview);
+        Assert.Contains("newer Codex version", result.RunFailureReason, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task RunAsync_PreservesUtf8AcrossPromptAgentOutputJsonAndMarkdownArtifacts()
+    {
+        using var repo = TestWorkspace.CreateGitRepository();
+        var text = "Product charter \u2014 10\u201320 teams \u201cquoted text\u201d";
+        var config = new BatchConfig
+        {
+            Project = "Unicode",
+            RepoPath = repo.Root,
+            DefaultAgent = "dryrun",
+            Prompts =
+            [
+                new PromptTask { Id = "P001", Title = text, Prompt = text + Environment.NewLine + "Second line.", Verify = [] }
+            ]
+        };
+
+        var result = await CreateBatchRunner().RunAsync(config, new RunOptions());
+        var task = Assert.Single(result.Tasks);
+        var runDirectory = Path.Combine(repo.Root, ".agentbatchrunner", "runs", result.RunId);
+
+        Assert.Equal(config.Prompts[0].Prompt, await Utf8File.ReadAllTextAsync(Path.Combine(task.TaskDirectory, "prompt.md")));
+        Assert.Contains(text, await Utf8File.ReadAllTextAsync(Path.Combine(task.TaskDirectory, "attempts", "attempt-1", "agent-output.txt")));
+        Assert.Contains(text, await Utf8File.ReadAllTextAsync(Path.Combine(runDirectory, "final-report.md")));
+        var reloadedConfig = await new RunStateStore().LoadConfigAsync(runDirectory);
+        Assert.Equal(config.Prompts[0].Prompt, reloadedConfig.Prompts[0].Prompt);
+        Assert.DoesNotContain("\u00c3", await Utf8File.ReadAllTextAsync(Path.Combine(task.TaskDirectory, "attempts", "attempt-1", "agent-output.txt")));
+    }
+
     private static BatchRunner CreateBatchRunner(
         AgentAdapterFactory? agentAdapterFactory = null,
         IRunEventSink? eventSink = null,
-        AgentRateLimitStateStore? rateLimitStateStore = null)
+        AgentRateLimitStateStore? rateLimitStateStore = null,
+        IAgentPreflightService? preflightService = null)
     {
         var logger = new ConsoleLogger();
         var processRunner = new ProcessRunner();
@@ -403,7 +611,8 @@ public sealed class BatchRunnerTests
             agentAdapterFactory ?? new AgentAdapterFactory(processRunner, logger),
             logger,
             eventSink,
-            rateLimitStateStore: rateLimitStateStore);
+            rateLimitStateStore: rateLimitStateStore,
+            agentPreflightService: preflightService ?? NoOpAgentPreflightService.Instance);
     }
 
     private sealed class TestAgentAdapterFactory(IAgentAdapter adapter)
@@ -446,11 +655,14 @@ public sealed class BatchRunnerTests
 
         public int CallCount { get; private set; }
 
+        public string? LastExecutablePath { get; private set; }
+
         public Task<AgentExecutionResult> ExecuteAsync(
             AgentExecutionRequest request,
             CancellationToken cancellationToken)
         {
             CallCount++;
+            LastExecutablePath = request.ExecutablePath;
             return Task.FromResult(new AgentExecutionResult
             {
                 AgentName = result.AgentName,
@@ -466,6 +678,48 @@ public sealed class BatchRunnerTests
                 RateLimitResetAt = result.RateLimitResetAt,
                 RateLimitReason = result.RateLimitReason
             });
+        }
+    }
+
+    private sealed class RecordingRoutingAgentFactory()
+        : AgentAdapterFactory(new ProcessRunner(), new ConsoleLogger())
+    {
+        public List<string> CreatedAgents { get; } = [];
+
+        public override IAgentAdapter Create(string agent)
+        {
+            CreatedAgents.Add(agent);
+            return new SuccessfulAgentAdapter(agent);
+        }
+    }
+
+    private sealed class SuccessfulAgentAdapter(string name) : IAgentAdapter
+    {
+        public string Name => name;
+
+        public Task<AgentExecutionResult> ExecuteAsync(
+            AgentExecutionRequest request,
+            CancellationToken cancellationToken)
+        {
+            return Task.FromResult(new AgentExecutionResult
+            {
+                AgentName = name,
+                Command = $"fake-{name}",
+                ExitCode = 0,
+                SessionId = $"{name}-session"
+            });
+        }
+    }
+
+    private sealed class StaticPreflightService(AgentPreflightResult result) : IAgentPreflightService
+    {
+        public Task<AgentPreflightResult> RunAsync(
+            BatchConfig config,
+            IReadOnlyCollection<string> effectiveAgents,
+            string workingDirectory,
+            CancellationToken cancellationToken)
+        {
+            return Task.FromResult(result);
         }
     }
 

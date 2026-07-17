@@ -28,9 +28,34 @@ Dry-run mode does not call Claude or Codex. It logs the prompt that would have b
 dotnet run --project src\AgentBatchRunner.Gui
 ```
 
-The WPF GUI lets you browse for a `.yaml`/`.yml` prompt file, validate it, choose `dryrun`,
-`claude`, or `codex` as the same kind of agent override used by the CLI, run or cancel the batch,
+The WPF GUI lets you browse for a `.yaml`/`.yml` prompt file, validate it, run or cancel the batch,
 watch prompt status/logs live, inspect latest attempt outputs, and open the final report/run folder.
+Its default routing mode is **From YAML (recommended)**, so mixed Claude/Codex files retain each
+prompt's configured agent. The explicit `Global override: dryrun`, `Global override: claude`, and
+`Global override: codex` choices intentionally replace the agent for every prompt and display a
+warning. Loading a different YAML file resets routing to From YAML.
+
+GUI validation also performs local agent preflight. Run stays disabled until every required agent
+executable has been resolved and its version check has passed. The exact executable paths and
+versions are shown before execution.
+
+## Agent routing
+
+AgentBatchRunner uses one precedence rule in validation, GUI preview, execution, resume artifacts,
+and reports:
+
+1. An explicit run override, such as CLI `--agent codex` or GUI `Global override: codex`.
+2. The prompt's `agent` value.
+3. The YAML `defaultAgent`.
+4. Validation fails if none is available.
+
+Omitting CLI `--agent` means **no global override**. For mixed-agent YAML, run without `--agent`:
+
+```powershell
+dotnet run --project src\AgentBatchRunner -- run prompts.yaml
+```
+
+Use `--agent` only when replacing all prompt-level routing is deliberate.
 
 ## Run with Claude Code
 
@@ -74,6 +99,12 @@ The sandbox is configurable (see [Unattended execution settings](#unattended-exe
 
 If a Codex session id is detected in structured output, the adapter prefers that specific session. When no id was captured, it falls back to `resume --last` and logs a warning, because `--last` resumes the most recent Codex session globally and could attach to an unrelated session if other Codex runs happened concurrently.
 
+An exact-session retry uses the supported positional syntax:
+
+```powershell
+codex exec resume "<session-id>" "<retry prompt>"
+```
+
 ## Resume and Report
 
 ```powershell
@@ -101,6 +132,9 @@ claudePermissionMode: acceptEdits      # Claude --permission-mode value ("" omit
 claudeDangerouslySkipPermissions: false # true => --dangerously-skip-permissions (overrides the mode)
 codexSandbox: workspace-write          # Codex --sandbox value for the initial run ("" omits the flag)
 codexFullAuto: false                   # true => --full-auto (overrides the sandbox flag)
+minimumCodexVersion: 0.144.5           # minimum accepted codex-cli version
+# codexExecutablePath: C:\Tools\OpenAI Codex\codex.exe
+# claudeExecutablePath: C:\Tools\Claude\claude.exe
 ```
 
 Agent and verification timeouts are required to be positive. A timed-out process is terminated,
@@ -122,6 +156,39 @@ prompts:
     verifyTimeoutSeconds: 1800
 ```
 
+## Agent executable resolution and preflight
+
+Executable paths are optional and must be absolute when supplied. Resolution happens once before
+the first checkpoint or prompt, in this order:
+
+1. `codexExecutablePath` or `claudeExecutablePath` in YAML.
+2. `AGENTBATCHRUNNER_CODEX_PATH` or `AGENTBATCHRUNNER_CLAUDE_PATH`.
+3. On Windows, native Codex at `%LOCALAPPDATA%\Programs\OpenAI\Codex\bin\codex.exe` when present.
+4. `PATH`/`PATHEXT` lookup.
+
+AgentBatchRunner retains and uses the resulting absolute path for the run and normalized resume
+configuration. It runs `<agent> --version` locally and does not make a provider request during
+preflight. Codex output must be parseable as `codex-cli <version>` and meet
+`minimumCodexVersion`; Claude must return a parseable version. Missing executables, nonzero or
+unparseable version output, stale WSL-guidance launchers, and unsupported Codex versions stop the
+entire run before task checkpoints are created.
+
+If a running agent later reports `requires a newer version of Codex` or cannot launch, that is a
+single run-level `ToolchainFailure`: it is not retried, untouched prompts are marked `Skipped`, and
+the report records one actionable blocker. Genuine prompt/verification failures, timeouts, and rate
+limits keep their existing retry or stop behavior.
+
+On Windows, inspect all launchers and the active version with:
+
+```powershell
+where.exe codex
+codex --version
+& "$env:LOCALAPPDATA\Programs\OpenAI\Codex\bin\codex.exe" --version
+```
+
+Restart AgentBatchRunner after changing `PATH`; an already-running GUI keeps the environment it
+inherited at startup. AgentBatchRunner never updates or installs an agent CLI automatically.
+
 ## Example prompts.yaml
 
 ```yaml
@@ -131,6 +198,10 @@ defaultAgent: claude
 defaultMaxRetries: 3
 defaultAgentTimeoutSeconds: 1800
 defaultVerifyTimeoutSeconds: 900
+minimumCodexVersion: 0.144.5
+# Optional absolute paths override environment/native/PATH discovery:
+# codexExecutablePath: C:\Tools\OpenAI Codex\codex.exe
+# claudeExecutablePath: C:\Tools\Claude\claude.exe
 
 prompts:
   - id: P001
@@ -189,3 +260,5 @@ prompts:
 - Agent and verification timeouts terminate the process tree on timeout where supported. Commands that ignore termination or spawn detached children may still require manual cleanup.
 - A prompt with no `verify` commands is recorded as `UnverifiedSuccess` (the agent succeeded but the result was not automatically checked) rather than `Succeeded`.
 - Unattended permission/sandbox flags target current `claude` and `codex` CLI syntax; if your installed CLI differs, override the relevant settings (or set them to empty) so the correct flags are sent.
+- CLI `validate` checks YAML/configuration only. CLI `run` performs executable preflight; GUI `Validate` performs both configuration validation and preflight.
+- Prompts, captured stdout/stderr, JSON state, logs, and Markdown reports are written and read as UTF-8 without a BOM.

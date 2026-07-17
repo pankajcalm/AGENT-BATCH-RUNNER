@@ -41,7 +41,7 @@ public sealed class ReportGeneratorTests
         Assert.True(File.Exists(Path.Combine(runDirectory, "run-summary.json")));
         var markdown = await File.ReadAllTextAsync(reportPath);
         Assert.Contains("# AgentBatchRunner Final Report", markdown);
-        Assert.Contains("| P001 | Task | dryrun | 1 | Succeeded |", markdown);
+        Assert.Contains("| P001 | Task | (none) | (none) | (none) | dryrun | 1 | Succeeded |", markdown);
     }
 
     [Fact]

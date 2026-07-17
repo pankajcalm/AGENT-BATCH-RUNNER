@@ -33,7 +33,7 @@ public sealed class GitCheckpointManager(ProcessRunner processRunner, ConsoleLog
             repoPath,
             cancellationToken,
             timeout: commandTimeout);
-        await File.WriteAllTextAsync(
+        await Utf8File.WriteAllTextAsync(
             Path.Combine(taskDirectory, "git-status-before.txt"),
             statusResult.StandardOutput,
             cancellationToken);
@@ -47,7 +47,7 @@ public sealed class GitCheckpointManager(ProcessRunner processRunner, ConsoleLog
                 repoPath,
                 cancellationToken,
                 timeout: commandTimeout);
-            await File.WriteAllTextAsync(
+            await Utf8File.WriteAllTextAsync(
                 Path.Combine(taskDirectory, "git-diff-before.patch"),
                 diffBefore.StandardOutput,
                 cancellationToken);
@@ -66,7 +66,7 @@ public sealed class GitCheckpointManager(ProcessRunner processRunner, ConsoleLog
             throw new InvalidOperationException($"Could not create checkpoint branch '{checkpointId}': {branchResult.CombinedOutput}");
         }
 
-        await File.WriteAllTextAsync(
+        await Utf8File.WriteAllTextAsync(
             Path.Combine(taskDirectory, "checkpoint.txt"),
             checkpointId,
             cancellationToken);
@@ -86,7 +86,7 @@ public sealed class GitCheckpointManager(ProcessRunner processRunner, ConsoleLog
             repoPath,
             cancellationToken,
             timeout: commandTimeout);
-        await File.WriteAllTextAsync(
+        await Utf8File.WriteAllTextAsync(
             Path.Combine(taskDirectory, "git-diff-after.patch"),
             diffAfter.StandardOutput,
             cancellationToken);

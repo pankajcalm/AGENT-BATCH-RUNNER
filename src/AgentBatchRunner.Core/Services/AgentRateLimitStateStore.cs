@@ -1,4 +1,5 @@
 using System.Text.Json;
+using AgentBatchRunner.Infrastructure;
 
 namespace AgentBatchRunner.Services;
 
@@ -136,7 +137,7 @@ public sealed class AgentRateLimitStateStore
 
         try
         {
-            var json = File.ReadAllText(StatePath);
+            var json = Utf8File.ReadAllText(StatePath);
             var state = JsonSerializer.Deserialize<AgentRateLimitStateFile>(json, JsonOptions)
                 ?? new AgentRateLimitStateFile();
             Normalize(state);
@@ -157,7 +158,7 @@ public sealed class AgentRateLimitStateStore
             Directory.CreateDirectory(directory);
         }
 
-        File.WriteAllText(StatePath, JsonSerializer.Serialize(state, JsonOptions));
+        Utf8File.WriteAllText(StatePath, JsonSerializer.Serialize(state, JsonOptions));
     }
 
     private static void Normalize(AgentRateLimitStateFile state)

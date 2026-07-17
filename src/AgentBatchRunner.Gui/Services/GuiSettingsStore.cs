@@ -1,6 +1,9 @@
 using System.IO;
 using System.Text.Json;
+using AgentBatchRunner.Agents;
 using AgentBatchRunner.Gui.Models;
+using AgentBatchRunner.Infrastructure;
+using AgentBatchRunner.Services;
 
 namespace AgentBatchRunner.Gui.Services;
 
@@ -11,13 +14,6 @@ public sealed class GuiSettingsStore
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web)
     {
         WriteIndented = true
-    };
-
-    private static readonly HashSet<string> ValidAgents = new(StringComparer.OrdinalIgnoreCase)
-    {
-        "dryrun",
-        "claude",
-        "codex"
     };
 
     public GuiSettingsStore(string? settingsPath = null)
@@ -42,7 +38,7 @@ public sealed class GuiSettingsStore
 
         try
         {
-            var json = File.ReadAllText(SettingsPath);
+            var json = Utf8File.ReadAllText(SettingsPath);
             var settings = JsonSerializer.Deserialize<GuiSettings>(json, JsonOptions) ?? new GuiSettings();
             Normalize(settings, removeMissingRecentFiles: true);
             return settings;
@@ -63,7 +59,7 @@ public sealed class GuiSettingsStore
         }
 
         var json = JsonSerializer.Serialize(settings, JsonOptions);
-        File.WriteAllText(SettingsPath, json);
+        Utf8File.WriteAllText(SettingsPath, json);
     }
 
     public void AddRecentFile(GuiSettings settings, string filePath)
@@ -86,9 +82,11 @@ public sealed class GuiSettingsStore
 
     private static void Normalize(GuiSettings settings, bool removeMissingRecentFiles)
     {
-        settings.LastSelectedAgent = ValidAgents.Contains(settings.LastSelectedAgent)
-            ? settings.LastSelectedAgent.ToLowerInvariant()
-            : "dryrun";
+        var selectedOverride = AgentRoutingMode.ToOverride(settings.LastSelectedAgent);
+        settings.LastSelectedAgent = selectedOverride is null ||
+                                     AgentAdapterFactory.IsSupportedAgent(selectedOverride)
+            ? AgentRoutingMode.FromOverride(selectedOverride)
+            : AgentRoutingMode.FromYaml;
 
         if (!TryNormalizeExistingFile(settings.LastPromptFilePath, out var normalizedLastPrompt))
         {

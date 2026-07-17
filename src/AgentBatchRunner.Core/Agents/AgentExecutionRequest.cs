@@ -14,5 +14,7 @@ public sealed class AgentExecutionRequest
 
     public string AttemptDirectory { get; set; } = string.Empty;
 
+    public string? ExecutablePath { get; set; }
+
     public AgentInvocationOptions Options { get; set; } = new();
 }

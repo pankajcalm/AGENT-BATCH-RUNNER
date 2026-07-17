@@ -11,8 +11,11 @@ public sealed class CommandLineApp(
     ReportGenerator reportGenerator,
     AgentRateLimitStateStore rateLimitStateStore,
     ConsoleLogger logger,
-    Func<bool>? isElevated = null)
+    Func<bool>? isElevated = null,
+    EffectiveAgentPolicy? effectiveAgentPolicy = null)
 {
+    private readonly EffectiveAgentPolicy _effectiveAgentPolicy = effectiveAgentPolicy ?? new EffectiveAgentPolicy();
+
     public async Task<int> RunAsync(string[] args, CancellationToken cancellationToken)
     {
         if (args.Length == 0 || IsHelp(args[0]))
@@ -110,7 +113,9 @@ public sealed class CommandLineApp(
             new RunOptions { AgentOverride = agentOverride },
             cancellationToken);
 
-        return result.RateLimited > 0
+        return result.FailureKind != RunFailureKind.None
+            ? 4
+            : result.RateLimited > 0
             ? 3
             : result.NeedsHumanReview == 0 && result.Failed == 0 ? 0 : 2;
     }
@@ -149,7 +154,9 @@ public sealed class CommandLineApp(
             },
             cancellationToken);
 
-        return result.RateLimited > 0
+        return result.FailureKind != RunFailureKind.None
+            ? 4
+            : result.RateLimited > 0
             ? 3
             : result.NeedsHumanReview == 0 && result.Failed == 0 ? 0 : 2;
     }
@@ -265,7 +272,7 @@ public sealed class CommandLineApp(
         string? agentOverride,
         IReadOnlySet<string>? skipPromptIds = null)
     {
-        foreach (var agentName in ResolveEffectiveAgents(config, agentOverride, skipPromptIds))
+        foreach (var agentName in _effectiveAgentPolicy.ResolveDistinctAgents(config, agentOverride, skipPromptIds))
         {
             if (string.Equals(agentName, "dryrun", StringComparison.OrdinalIgnoreCase))
             {
@@ -282,17 +289,6 @@ public sealed class CommandLineApp(
         return 0;
     }
 
-    private static IEnumerable<string> ResolveEffectiveAgents(
-        BatchConfig config,
-        string? agentOverride,
-        IReadOnlySet<string>? skipPromptIds)
-    {
-        return config.Prompts
-            .Where(prompt => skipPromptIds?.Contains(prompt.Id) != true)
-            .Select(prompt => (agentOverride ?? prompt.Agent ?? config.DefaultAgent).Trim().ToLowerInvariant())
-            .Distinct(StringComparer.OrdinalIgnoreCase);
-    }
-
     private async Task<int> ReportAsync(string[] args, CancellationToken cancellationToken)
     {
         var runDirectory = ResolveRunDirectory(args);
@@ -305,7 +301,7 @@ public sealed class CommandLineApp(
         await reportGenerator.GenerateAsync(runDirectory, result, cancellationToken);
         var reportPath = Path.Combine(runDirectory, "final-report.md");
         logger.Info($"Report generated: {reportPath}");
-        Console.WriteLine(await File.ReadAllTextAsync(reportPath, cancellationToken));
+        Console.WriteLine(await Utf8File.ReadAllTextAsync(reportPath, cancellationToken));
         return 0;
     }
 

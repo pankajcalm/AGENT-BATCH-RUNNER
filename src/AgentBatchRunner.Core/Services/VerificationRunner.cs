@@ -34,7 +34,10 @@ public sealed class VerificationRunner(
             result.Succeeded = false;
             result.Duration = DateTimeOffset.Now - started;
             result.LogPath = Path.Combine(attemptDirectory, "verification.log");
-            await File.WriteAllTextAsync(result.LogPath, SensitiveDataRedactor.Redact(log.ToString()), cancellationToken);
+            await Utf8File.WriteAllTextAsync(
+                result.LogPath,
+                SensitiveDataRedactor.Redact(log.ToString()),
+                cancellationToken);
             return result;
         }
 
@@ -146,7 +149,10 @@ public sealed class VerificationRunner(
         result.Succeeded = result.Commands.All(c => c.Succeeded);
         result.Duration = DateTimeOffset.Now - started;
         result.LogPath = Path.Combine(attemptDirectory, "verification.log");
-        await File.WriteAllTextAsync(result.LogPath, SensitiveDataRedactor.Redact(log.ToString()), cancellationToken);
+        await Utf8File.WriteAllTextAsync(
+            result.LogPath,
+            SensitiveDataRedactor.Redact(log.ToString()),
+            cancellationToken);
         return result;
     }
 

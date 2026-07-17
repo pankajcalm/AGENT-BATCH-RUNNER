@@ -8,6 +8,8 @@ public sealed class PromptTask
 
     public string? Agent { get; set; }
 
+    public string? EffectiveAgent { get; set; }
+
     public string Prompt { get; set; } = string.Empty;
 
     public List<string> Verify { get; set; } = [];

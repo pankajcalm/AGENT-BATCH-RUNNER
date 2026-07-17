@@ -63,7 +63,7 @@ public sealed class AgentAdapterArgumentTests
 
         var args = CodexAdapter.BuildArguments(request);
 
-        Assert.Equal(["exec", "resume", "--session", "conv-001", "Fix it."], args);
+        Assert.Equal(["exec", "resume", "conv-001", "Fix it."], args);
         Assert.False(CodexAdapter.UsesLastSessionFallback(request));
     }
 
@@ -149,6 +149,6 @@ public sealed class AgentAdapterArgumentTests
         });
 
         Assert.DoesNotContain("--sandbox", args);
-        Assert.Equal(["exec", "resume", "--session", "conv-1", "Fix."], args);
+        Assert.Equal(["exec", "resume", "conv-1", "Fix."], args);
     }
 }

@@ -4,7 +4,7 @@ using System.Text;
 
 namespace AgentBatchRunner.Infrastructure;
 
-public sealed class ProcessRunner
+public class ProcessRunner
 {
     public Task<ProcessResult> RunShellCommandAsync(
         string command,
@@ -32,7 +32,7 @@ public sealed class ProcessRunner
             timeout: timeout);
     }
 
-    public async Task<ProcessResult> RunExecutableAsync(
+    public virtual async Task<ProcessResult> RunExecutableAsync(
         string fileName,
         IEnumerable<string> arguments,
         string workingDirectory,
@@ -51,6 +51,8 @@ public sealed class ProcessRunner
             UseShellExecute = false,
             CreateNoWindow = true
         };
+        startInfo.StandardOutputEncoding = Encoding.UTF8;
+        startInfo.StandardErrorEncoding = Encoding.UTF8;
 
         foreach (var argument in argumentList)
         {

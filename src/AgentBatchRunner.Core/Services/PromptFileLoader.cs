@@ -1,4 +1,5 @@
 using AgentBatchRunner.Agents;
+using AgentBatchRunner.Infrastructure;
 using AgentBatchRunner.Models;
 using YamlDotNet.Serialization;
 using YamlDotNet.Serialization.NamingConventions;
@@ -7,10 +8,17 @@ namespace AgentBatchRunner.Services;
 
 public sealed class PromptFileLoader
 {
+    private readonly EffectiveAgentPolicy _effectiveAgentPolicy;
+
     private readonly IDeserializer _deserializer = new DeserializerBuilder()
         .WithNamingConvention(CamelCaseNamingConvention.Instance)
         .IgnoreUnmatchedProperties()
         .Build();
+
+    public PromptFileLoader(EffectiveAgentPolicy? effectiveAgentPolicy = null)
+    {
+        _effectiveAgentPolicy = effectiveAgentPolicy ?? new EffectiveAgentPolicy();
+    }
 
     public async Task<BatchConfig> LoadAsync(string yamlPath, CancellationToken cancellationToken = default)
     {
@@ -24,7 +32,7 @@ public sealed class PromptFileLoader
             throw new FileNotFoundException("Prompt YAML file was not found.", yamlPath);
         }
 
-        var yaml = await File.ReadAllTextAsync(yamlPath, cancellationToken);
+        var yaml = await Utf8File.ReadAllTextAsync(yamlPath, cancellationToken);
         try
         {
             return _deserializer.Deserialize<BatchConfig>(yaml) ?? new BatchConfig();
@@ -49,13 +57,18 @@ public sealed class PromptFileLoader
             result.Errors.Add("repoPath is required.");
         }
 
-        if (string.IsNullOrWhiteSpace(config.DefaultAgent))
-        {
-            result.Errors.Add("defaultAgent is required.");
-        }
-        else if (!AgentAdapterFactory.IsSupportedAgent(config.DefaultAgent))
+        if (!string.IsNullOrWhiteSpace(config.DefaultAgent) && !AgentAdapterFactory.IsSupportedAgent(config.DefaultAgent))
         {
             result.Errors.Add($"defaultAgent '{config.DefaultAgent}' is not supported. Use claude, codex, or dryrun.");
+        }
+
+        ValidateExecutablePath(config.CodexExecutablePath, "codexExecutablePath", result);
+        ValidateExecutablePath(config.ClaudeExecutablePath, "claudeExecutablePath", result);
+
+        if (string.IsNullOrWhiteSpace(config.MinimumCodexVersion) ||
+            !Version.TryParse(config.MinimumCodexVersion, out _))
+        {
+            result.Errors.Add("minimumCodexVersion must be a valid version such as 0.144.5.");
         }
 
         if (config.DefaultMaxRetries < 1)
@@ -108,6 +121,13 @@ public sealed class PromptFileLoader
                 result.Errors.Add($"{prefix}.agent '{prompt.Agent}' is not supported. Use claude, codex, or dryrun.");
             }
 
+            if ((string.IsNullOrWhiteSpace(prompt.Agent) || AgentAdapterFactory.IsSupportedAgent(prompt.Agent)) &&
+                (string.IsNullOrWhiteSpace(config.DefaultAgent) || AgentAdapterFactory.IsSupportedAgent(config.DefaultAgent)) &&
+                !_effectiveAgentPolicy.TryResolve(config, prompt, null, out _, out var routingError))
+            {
+                result.Errors.Add($"{prefix}: {routingError}");
+            }
+
             if (string.IsNullOrWhiteSpace(prompt.Prompt))
             {
                 result.Errors.Add($"{prefix}.prompt is required.");
@@ -137,5 +157,16 @@ public sealed class PromptFileLoader
         }
 
         return result;
+    }
+
+    private static void ValidateExecutablePath(
+        string? path,
+        string propertyName,
+        BatchValidationResult result)
+    {
+        if (!string.IsNullOrWhiteSpace(path) && !Path.IsPathRooted(path.Trim().Trim('"')))
+        {
+            result.Errors.Add($"{propertyName} must be an absolute path when specified.");
+        }
     }
 }

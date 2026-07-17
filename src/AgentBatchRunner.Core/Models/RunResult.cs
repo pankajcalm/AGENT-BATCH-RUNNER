@@ -12,6 +12,16 @@ public sealed class RunResult
 
     public DateTimeOffset? CompletedAt { get; set; }
 
+    public string? DefaultAgent { get; set; }
+
+    public string? AgentOverride { get; set; }
+
+    public RunFailureKind FailureKind { get; set; }
+
+    public string? RunFailureReason { get; set; }
+
+    public List<AgentToolchainInfo> Toolchains { get; set; } = [];
+
     public List<TaskRunResult> Tasks { get; set; } = [];
 
     public int TotalPrompts => Tasks.Count;
@@ -26,6 +36,10 @@ public sealed class RunResult
 
     public int RateLimited => Tasks.Count(t => t.Status == RunStatus.RateLimited);
 
+    public int ToolchainFailures => Tasks.Count(t => t.Status == RunStatus.ToolchainFailure);
+
+    public int Skipped => Tasks.Count(t => t.Status == RunStatus.Skipped);
+
     public int TimedOutTasks => Tasks.Count(t => t.TimedOut);
 
     public int TimedOutAttempts => Tasks.Sum(t => t.Attempts.Count(a => a.TimedOut));
@@ -38,6 +52,12 @@ public sealed class TaskRunResult
     public string Title { get; set; } = string.Empty;
 
     public string Agent { get; set; } = string.Empty;
+
+    public string? ConfiguredAgent { get; set; }
+
+    public string? DefaultAgent { get; set; }
+
+    public string? AgentOverride { get; set; }
 
     public RunStatus Status { get; set; } = RunStatus.Pending;
 

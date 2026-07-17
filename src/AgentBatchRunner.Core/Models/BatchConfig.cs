@@ -6,7 +6,17 @@ public sealed class BatchConfig
 
     public string RepoPath { get; set; } = string.Empty;
 
-    public string DefaultAgent { get; set; } = "dryrun";
+    public string? DefaultAgent { get; set; }
+
+    public string? CodexExecutablePath { get; set; }
+
+    public string? ClaudeExecutablePath { get; set; }
+
+    public string MinimumCodexVersion { get; set; } = "0.144.5";
+
+    public string? RunAgentOverride { get; set; }
+
+    public List<AgentToolchainInfo> ResolvedAgentToolchains { get; set; } = [];
 
     public int DefaultMaxRetries { get; set; } = 3;
 

@@ -3,6 +3,9 @@ namespace AgentBatchRunner.Services;
 public enum RunEventKind
 {
     RunStarted,
+    PreflightStarted,
+    AgentPreflightSucceeded,
+    PreflightFailed,
     RunCompleted,
     RunCanceled,
     TaskPending,
@@ -14,6 +17,7 @@ public enum RunEventKind
     AgentFailed,
     AgentTimedOut,
     AgentRateLimited,
+    AgentToolchainFailed,
     VerificationStarted,
     VerificationPassed,
     VerificationFailed,
@@ -22,6 +26,9 @@ public enum RunEventKind
     TaskSucceeded,
     TaskFailed,
     TaskRateLimited,
+    TaskToolchainFailed,
+    TaskSkipped,
     RunRateLimited,
+    RunToolchainFailed,
     ReportGenerated
 }

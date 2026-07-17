@@ -72,4 +72,21 @@ public sealed class ProcessRunnerTests
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() =>
             runner.RunShellCommandAsync(SleepCommand(30), temp.Root, cts.Token));
     }
+
+    [Fact]
+    public async Task RunShellCommand_CapturesUtf8StdoutAndStderrWithoutMojibake()
+    {
+        using var temp = TestWorkspace.Create();
+        var expected = "Product charter \u2014 10\u201320 teams \u201cquoted text\u201d";
+        var command = RuntimeInformation.IsOSPlatform(OSPlatform.Windows)
+            ? $"[Console]::OutputEncoding = [Text.UTF8Encoding]::new($false); Write-Output '{expected}'; [Console]::Error.WriteLine('{expected}')"
+            : $"printf '%s\\n' '{expected}'; printf '%s\\n' '{expected}' 1>&2";
+
+        var result = await new ProcessRunner().RunShellCommandAsync(command, temp.Root);
+
+        Assert.True(result.Succeeded, result.CombinedOutput);
+        Assert.Contains(expected, result.StandardOutput);
+        Assert.Contains(expected, result.StandardError);
+        Assert.DoesNotContain("\u00c3", result.CombinedOutput);
+    }
 }

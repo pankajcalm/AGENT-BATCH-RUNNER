@@ -19,7 +19,7 @@ public sealed class ClaudeCodeAdapter(ProcessRunner processRunner, ConsoleLogger
 
         var arguments = BuildArguments(request);
         var processResult = await processRunner.RunExecutableAsync(
-            ExecutableName,
+            request.ExecutablePath ?? ExecutableName,
             arguments,
             request.RepoPath,
             cancellationToken,

@@ -14,10 +14,17 @@ public sealed class BatchRunner(
     ConsoleLogger logger,
     IRunEventSink? runEventSink = null,
     AgentRateLimitDetector? rateLimitDetector = null,
-    AgentRateLimitStateStore? rateLimitStateStore = null)
+    AgentRateLimitStateStore? rateLimitStateStore = null,
+    EffectiveAgentPolicy? effectiveAgentPolicy = null,
+    IAgentPreflightService? agentPreflightService = null,
+    AgentToolchainFailureDetector? toolchainFailureDetector = null)
 {
     private readonly AgentRateLimitDetector _rateLimitDetector = rateLimitDetector ?? new AgentRateLimitDetector();
     private readonly AgentRateLimitStateStore _rateLimitStateStore = rateLimitStateStore ?? new AgentRateLimitStateStore();
+    private readonly EffectiveAgentPolicy _effectiveAgentPolicy = effectiveAgentPolicy ?? new EffectiveAgentPolicy();
+    private readonly IAgentPreflightService _agentPreflightService = agentPreflightService ??
+        new AgentPreflightService(new ProcessRunner(), new AgentExecutableResolver());
+    private readonly AgentToolchainFailureDetector _toolchainFailureDetector = toolchainFailureDetector ?? new AgentToolchainFailureDetector();
 
     public async Task<RunResult> RunAsync(
         BatchConfig config,
@@ -30,11 +37,13 @@ public sealed class BatchRunner(
             throw new InvalidOperationException("Invalid batch configuration: " + string.Join(" ", validation.Errors));
         }
 
-        if (!string.IsNullOrWhiteSpace(options.AgentOverride) &&
-            !AgentAdapterFactory.IsSupportedAgent(options.AgentOverride))
-        {
-            throw new InvalidOperationException($"Agent override '{options.AgentOverride}' is not supported. Use claude, codex, or dryrun.");
-        }
+        var agentOverride = EffectiveAgentPolicy.NormalizeOptional(options.AgentOverride);
+        var selections = _effectiveAgentPolicy.ResolveAll(config, agentOverride);
+        var selectionsByPrompt = selections.ToDictionary(
+            selection => selection.PromptId,
+            StringComparer.OrdinalIgnoreCase);
+
+        gitCheckpointManager.EnsureRepository(config.RepoPath);
 
         var runId = options.RunId ?? DateTimeOffset.Now.ToString("yyyyMMdd-HHmmss");
         var runDirectory = runStateStore.CreateRunDirectory(config.RepoPath, runId);
@@ -50,11 +59,16 @@ public sealed class BatchRunner(
         result.Project = config.Project;
         result.RepoPath = config.RepoPath;
         result.CompletedAt = null;
+        result.DefaultAgent = EffectiveAgentPolicy.NormalizeOptional(config.DefaultAgent);
+        result.AgentOverride = agentOverride;
+        result.FailureKind = RunFailureKind.None;
+        result.RunFailureReason = null;
 
-        await runStateStore.SaveJsonAsync(
-            Path.Combine(runDirectory, "run-config.normalized.json"),
-            config,
-            cancellationToken);
+        config.RunAgentOverride = agentOverride;
+        foreach (var prompt in config.Prompts)
+        {
+            prompt.EffectiveAgent = selectionsByPrompt[prompt.Id].EffectiveAgent;
+        }
 
         logger.Info($"Run {runId} started for project {config.Project}.");
         await PublishAsync(
@@ -67,8 +81,85 @@ public sealed class BatchRunner(
             },
             cancellationToken);
 
+        var activeSelections = selections
+            .Where(selection => !options.SkipPromptIds.Contains(selection.PromptId))
+            .ToList();
+        await PublishAsync(
+            new RunEvent
+            {
+                Kind = RunEventKind.PreflightStarted,
+                RunId = runId,
+                Message = "Agent toolchain preflight started.",
+                Path = runDirectory
+            },
+            cancellationToken);
+
+        var preflight = options.PreflightResult ?? await _agentPreflightService.RunAsync(
+            config,
+            activeSelections
+                .Select(selection => selection.EffectiveAgent)
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList(),
+            config.RepoPath,
+            cancellationToken);
+        ApplyPreflightMetadata(config, result, preflight);
+
+        await runStateStore.SaveJsonAsync(
+            Path.Combine(runDirectory, "run-config.normalized.json"),
+            config,
+            cancellationToken);
+
+        if (!preflight.Succeeded)
+        {
+            var failureReason = preflight.FailureReason ?? "Agent toolchain preflight failed.";
+            result.FailureKind = RunFailureKind.PreflightFailed;
+            result.RunFailureReason = failureReason;
+            await AddSkippedTasksAsync(
+                result,
+                config,
+                activeSelections,
+                runId,
+                runDirectory,
+                failureReason,
+                cancellationToken);
+            result.CompletedAt = DateTimeOffset.Now;
+            await reportGenerator.GenerateAsync(runDirectory, result, cancellationToken);
+
+            await PublishAsync(
+                new RunEvent
+                {
+                    Kind = RunEventKind.PreflightFailed,
+                    RunId = runId,
+                    Status = RunStatus.ToolchainFailure,
+                    FailureReason = failureReason,
+                    Message = failureReason,
+                    Path = runDirectory
+                },
+                cancellationToken);
+            await PublishReportGeneratedAsync(runId, runDirectory, cancellationToken);
+            logger.Error($"Run {runId} stopped during agent preflight: {failureReason}");
+            return result;
+        }
+
+        foreach (var toolchain in preflight.Toolchains)
+        {
+            await PublishAsync(
+                new RunEvent
+                {
+                    Kind = RunEventKind.AgentPreflightSucceeded,
+                    RunId = runId,
+                    Agent = toolchain.AgentName,
+                    Message = toolchain.Status == AgentPreflightStatus.NotRequired
+                        ? $"{toolchain.AgentName} uses the built-in adapter; no executable preflight is required."
+                        : $"{toolchain.AgentName} preflight passed: {toolchain.ExecutablePath} ({toolchain.Version}).",
+                    Path = toolchain.ExecutablePath
+                },
+                cancellationToken);
+        }
+
         foreach (var prompt in config.Prompts)
         {
+            var selection = selectionsByPrompt[prompt.Id];
             await PublishAsync(
                 new RunEvent
                 {
@@ -76,7 +167,7 @@ public sealed class BatchRunner(
                     RunId = runId,
                     PromptId = prompt.Id,
                     Title = prompt.Title,
-                    Agent = options.AgentOverride ?? prompt.Agent ?? config.DefaultAgent,
+                    Agent = selection.EffectiveAgent,
                     MaxAttempts = prompt.MaxRetries ?? config.DefaultMaxRetries,
                     Status = RunStatus.Pending,
                     Message = $"Task {prompt.Id} is pending."
@@ -86,8 +177,9 @@ public sealed class BatchRunner(
 
         try
         {
-            foreach (var prompt in config.Prompts)
+            for (var promptIndex = 0; promptIndex < config.Prompts.Count; promptIndex++)
             {
+                var prompt = config.Prompts[promptIndex];
                 if (options.SkipPromptIds.Contains(prompt.Id))
                 {
                     logger.Info($"Skipping {prompt.Id}; previous result succeeded.");
@@ -95,7 +187,15 @@ public sealed class BatchRunner(
                 }
 
                 result.Tasks.RemoveAll(t => string.Equals(t.Id, prompt.Id, StringComparison.OrdinalIgnoreCase));
-                var taskResult = await RunPromptTaskAsync(config, prompt, runId, runDirectory, options, cancellationToken);
+                var selection = selectionsByPrompt[prompt.Id];
+                var taskResult = await RunPromptTaskAsync(
+                    config,
+                    prompt,
+                    selection,
+                    preflight.Find(selection.EffectiveAgent),
+                    runId,
+                    runDirectory,
+                    cancellationToken);
                 result.Tasks.Add(taskResult);
 
                 await runStateStore.SaveJsonAsync(
@@ -108,27 +208,58 @@ public sealed class BatchRunner(
                     logger.Warning($"Run {runId} stopped because {taskResult.Agent} is rate-limited.");
                     break;
                 }
+
+                if (taskResult.Status == RunStatus.ToolchainFailure)
+                {
+                    var failureReason = taskResult.LastFailureReason ?? $"{taskResult.Agent} toolchain failed.";
+                    result.FailureKind = RunFailureKind.ToolchainFailure;
+                    result.RunFailureReason = failureReason;
+                    var untouchedSelections = config.Prompts
+                        .Skip(promptIndex + 1)
+                        .Where(remaining => !options.SkipPromptIds.Contains(remaining.Id))
+                        .Select(remaining => selectionsByPrompt[remaining.Id])
+                        .ToList();
+                    await AddSkippedTasksAsync(
+                        result,
+                        config,
+                        untouchedSelections,
+                        runId,
+                        runDirectory,
+                        failureReason,
+                        cancellationToken);
+                    logger.Error($"Run {runId} stopped because the {taskResult.Agent} toolchain is unusable: {failureReason}");
+                    await PublishAsync(
+                        new RunEvent
+                        {
+                            Kind = RunEventKind.RunToolchainFailed,
+                            RunId = runId,
+                            Agent = taskResult.Agent,
+                            Status = RunStatus.ToolchainFailure,
+                            FailureReason = failureReason,
+                            Message = failureReason,
+                            Path = runDirectory
+                        },
+                        cancellationToken);
+                    break;
+                }
             }
 
             result.CompletedAt = DateTimeOffset.Now;
             await reportGenerator.GenerateAsync(runDirectory, result, cancellationToken);
-            var reportPath = Path.Combine(runDirectory, "final-report.md");
+            var reportPath = await PublishReportGeneratedAsync(runId, runDirectory, cancellationToken);
             await PublishAsync(
                 new RunEvent
                 {
-                    Kind = RunEventKind.ReportGenerated,
+                    Kind = result.FailureKind == RunFailureKind.ToolchainFailure
+                        ? RunEventKind.RunToolchainFailed
+                        : result.RateLimited > 0 ? RunEventKind.RunRateLimited : RunEventKind.RunCompleted,
                     RunId = runId,
-                    Message = $"Final report generated: {reportPath}",
-                    Path = reportPath
-                },
-                cancellationToken);
-            await PublishAsync(
-                new RunEvent
-                {
-                    Kind = result.RateLimited > 0 ? RunEventKind.RunRateLimited : RunEventKind.RunCompleted,
-                    RunId = runId,
-                    Status = result.RateLimited > 0 ? RunStatus.RateLimited : null,
-                    Message = result.RateLimited > 0
+                    Status = result.FailureKind == RunFailureKind.ToolchainFailure
+                        ? RunStatus.ToolchainFailure
+                        : result.RateLimited > 0 ? RunStatus.RateLimited : null,
+                    Message = result.FailureKind == RunFailureKind.ToolchainFailure
+                        ? $"Run {runId} stopped because an agent toolchain failed."
+                        : result.RateLimited > 0
                         ? $"Run {runId} stopped because an agent is rate-limited."
                         : $"Run {runId} completed.",
                     Path = runDirectory
@@ -156,14 +287,15 @@ public sealed class BatchRunner(
     private async Task<TaskRunResult> RunPromptTaskAsync(
         BatchConfig config,
         PromptTask prompt,
+        EffectiveAgentSelection selection,
+        AgentToolchainInfo? toolchain,
         string runId,
         string runDirectory,
-        RunOptions options,
         CancellationToken cancellationToken)
     {
         gitCheckpointManager.EnsureRepository(config.RepoPath);
 
-        var agentName = (options.AgentOverride ?? prompt.Agent ?? config.DefaultAgent).Trim().ToLowerInvariant();
+        var agentName = selection.EffectiveAgent;
         var maxAttempts = prompt.MaxRetries ?? config.DefaultMaxRetries;
         var agentTimeoutSeconds = prompt.AgentTimeoutSeconds ?? config.DefaultAgentTimeoutSeconds;
         var verifyTimeoutSeconds = prompt.VerifyTimeoutSeconds ?? config.DefaultVerifyTimeoutSeconds;
@@ -184,12 +316,15 @@ public sealed class BatchRunner(
             Id = prompt.Id,
             Title = prompt.Title,
             Agent = agentName,
+            ConfiguredAgent = selection.ConfiguredAgent,
+            DefaultAgent = selection.DefaultAgent,
+            AgentOverride = selection.RunOverride,
             Status = RunStatus.Running,
             StartedAt = DateTimeOffset.Now,
             TaskDirectory = taskDirectory
         };
 
-        await File.WriteAllTextAsync(Path.Combine(taskDirectory, "prompt.md"), prompt.Prompt, cancellationToken);
+        await Utf8File.WriteAllTextAsync(Path.Combine(taskDirectory, "prompt.md"), prompt.Prompt, cancellationToken);
         await runStateStore.SaveJsonAsync(Path.Combine(taskDirectory, "status.json"), taskResult, cancellationToken);
 
         logger.Info($"[{prompt.Id}] Starting '{prompt.Title}' with {agentName}; max attempts: {maxAttempts}.");
@@ -295,11 +430,18 @@ public sealed class BatchRunner(
                         AttemptNumber = attemptNumber,
                         SessionId = sessionId,
                         AttemptDirectory = attemptDirectory,
+                        ExecutablePath = toolchain?.ExecutablePath,
                         Options = agentOptions
                     },
                     cancellationToken);
 
                 ApplyDetectedRateLimit(agentName, agentResult);
+                var toolchainFailureReason = _toolchainFailureDetector.Detect(agentName, agentResult);
+                if (!string.IsNullOrWhiteSpace(toolchainFailureReason))
+                {
+                    agentResult.IsToolchainFailure = true;
+                    agentResult.ToolchainFailureReason = toolchainFailureReason;
+                }
             }
 
             attemptResult.AgentResult = agentResult;
@@ -311,6 +453,8 @@ public sealed class BatchRunner(
                 {
                     Kind = agentResult.IsRateLimited
                         ? RunEventKind.AgentRateLimited
+                        : agentResult.IsToolchainFailure
+                        ? RunEventKind.AgentToolchainFailed
                         : agentResult.TimedOut
                         ? RunEventKind.AgentTimedOut
                         : agentResult.Succeeded
@@ -324,6 +468,8 @@ public sealed class BatchRunner(
                     MaxAttempts = maxAttempts,
                     Status = agentResult.IsRateLimited
                         ? RunStatus.RateLimited
+                        : agentResult.IsToolchainFailure
+                        ? RunStatus.ToolchainFailure
                         : agentResult.Succeeded ? RunStatus.Running : RunStatus.Failed,
                     Command = agentResult.Command,
                     WorkingDirectory = config.RepoPath,
@@ -336,6 +482,7 @@ public sealed class BatchRunner(
                     CombinedOutput = agentResult.CombinedOutput,
                     RateLimitResetAt = agentResult.RateLimitResetAt,
                     RateLimitReason = agentResult.RateLimitReason,
+                    FailureReason = agentResult.ToolchainFailureReason,
                     Message = agentResult.IsRateLimited
                         ? AgentRateLimitDisplay.BlockedMessage(agentName, new AgentRateLimitInfo
                         {
@@ -344,6 +491,8 @@ public sealed class BatchRunner(
                             BlockedUntil = agentResult.RateLimitResetAt,
                             Reason = agentResult.RateLimitReason ?? string.Empty
                         })
+                        : agentResult.IsToolchainFailure
+                        ? agentResult.ToolchainFailureReason ?? "Agent toolchain failed."
                         : agentResult.TimedOut
                         ? $"Agent timed out after {agentResult.Timeout?.TotalSeconds:0}s."
                         : agentResult.Succeeded
@@ -372,6 +521,22 @@ public sealed class BatchRunner(
                 taskResult.LastFailureReason = rateLimitMessage;
                 taskResult.RateLimitResetAt = agentResult.RateLimitResetAt;
                 taskResult.RateLimitReason = agentResult.RateLimitReason;
+                await runStateStore.SaveJsonAsync(Path.Combine(attemptDirectory, "status.json"), attemptResult, cancellationToken);
+                await runStateStore.SaveJsonAsync(Path.Combine(taskDirectory, "status.json"), taskResult, cancellationToken);
+                break;
+            }
+
+            if (agentResult.IsToolchainFailure)
+            {
+                var toolchainFailureReason = agentResult.ToolchainFailureReason ?? "Agent toolchain failed.";
+                attemptResult.Status = RunStatus.ToolchainFailure;
+                attemptResult.CompletedAt = DateTimeOffset.Now;
+                taskResult.Status = RunStatus.ToolchainFailure;
+                taskResult.CompletedAt = DateTimeOffset.Now;
+                taskResult.LastFailedVerificationCommand = $"agent:{adapter.Name}";
+                taskResult.LastFailedExitCode = agentResult.ExitCode;
+                taskResult.LastFailedLogPath = Path.Combine(attemptDirectory, "agent-output.txt");
+                taskResult.LastFailureReason = toolchainFailureReason;
                 await runStateStore.SaveJsonAsync(Path.Combine(attemptDirectory, "status.json"), attemptResult, cancellationToken);
                 await runStateStore.SaveJsonAsync(Path.Combine(taskDirectory, "status.json"), taskResult, cancellationToken);
                 break;
@@ -504,7 +669,11 @@ public sealed class BatchRunner(
             }
         }
 
-        if (taskResult.Status is not (RunStatus.Succeeded or RunStatus.UnverifiedSuccess or RunStatus.RateLimited))
+        if (taskResult.Status is not (
+            RunStatus.Succeeded or
+            RunStatus.UnverifiedSuccess or
+            RunStatus.RateLimited or
+            RunStatus.ToolchainFailure))
         {
             taskResult.Status = RunStatus.NeedsHumanReview;
             taskResult.CompletedAt = DateTimeOffset.Now;
@@ -513,6 +682,10 @@ public sealed class BatchRunner(
         else if (taskResult.Status == RunStatus.RateLimited)
         {
             logger.Warning($"[{prompt.Id}] Rate-limited after {taskResult.Attempts.Count} attempt(s).");
+        }
+        else if (taskResult.Status == RunStatus.ToolchainFailure)
+        {
+            logger.Error($"[{prompt.Id}] Toolchain failure; the batch will stop without retrying this attempt.");
         }
         else
         {
@@ -526,6 +699,8 @@ public sealed class BatchRunner(
             {
                 Kind = taskResult.Status == RunStatus.RateLimited
                     ? RunEventKind.TaskRateLimited
+                    : taskResult.Status == RunStatus.ToolchainFailure
+                    ? RunEventKind.TaskToolchainFailed
                     : taskResult.Status is RunStatus.Succeeded or RunStatus.UnverifiedSuccess
                     ? RunEventKind.TaskSucceeded
                     : RunEventKind.TaskFailed,
@@ -542,6 +717,8 @@ public sealed class BatchRunner(
                 RateLimitReason = taskResult.RateLimitReason,
                 Message = taskResult.Status == RunStatus.RateLimited
                     ? $"Task {prompt.Id} stopped because {agentName} is rate-limited."
+                    : taskResult.Status == RunStatus.ToolchainFailure
+                    ? $"Task {prompt.Id} stopped because the {agentName} toolchain failed."
                     : taskResult.Status is RunStatus.Succeeded or RunStatus.UnverifiedSuccess
                     ? $"Task {prompt.Id} finished with status {taskResult.Status}."
                     : $"Task {prompt.Id} needs human review.",
@@ -554,6 +731,95 @@ public sealed class BatchRunner(
     private Task PublishAsync(RunEvent runEvent, CancellationToken cancellationToken)
     {
         return (runEventSink ?? NullRunEventSink.Instance).OnRunEventAsync(runEvent, cancellationToken);
+    }
+
+    private static void ApplyPreflightMetadata(
+        BatchConfig config,
+        RunResult result,
+        AgentPreflightResult preflight)
+    {
+        config.ResolvedAgentToolchains = preflight.Toolchains;
+        result.Toolchains = preflight.Toolchains;
+
+        foreach (var toolchain in preflight.Toolchains.Where(item =>
+                     item.Status == AgentPreflightStatus.Succeeded &&
+                     !string.IsNullOrWhiteSpace(item.ExecutablePath)))
+        {
+            if (string.Equals(toolchain.AgentName, "codex", StringComparison.OrdinalIgnoreCase))
+            {
+                config.CodexExecutablePath = toolchain.ExecutablePath;
+            }
+            else if (string.Equals(toolchain.AgentName, "claude", StringComparison.OrdinalIgnoreCase))
+            {
+                config.ClaudeExecutablePath = toolchain.ExecutablePath;
+            }
+        }
+    }
+
+    private async Task AddSkippedTasksAsync(
+        RunResult result,
+        BatchConfig config,
+        IEnumerable<EffectiveAgentSelection> selections,
+        string runId,
+        string runDirectory,
+        string failureReason,
+        CancellationToken cancellationToken)
+    {
+        foreach (var selection in selections)
+        {
+            var prompt = config.Prompts.First(item =>
+                string.Equals(item.Id, selection.PromptId, StringComparison.OrdinalIgnoreCase));
+            result.Tasks.RemoveAll(task =>
+                string.Equals(task.Id, selection.PromptId, StringComparison.OrdinalIgnoreCase));
+
+            var now = DateTimeOffset.Now;
+            result.Tasks.Add(new TaskRunResult
+            {
+                Id = prompt.Id,
+                Title = prompt.Title,
+                Agent = selection.EffectiveAgent,
+                ConfiguredAgent = selection.ConfiguredAgent,
+                DefaultAgent = selection.DefaultAgent,
+                AgentOverride = selection.RunOverride,
+                Status = RunStatus.Skipped,
+                StartedAt = now,
+                CompletedAt = now,
+                TaskDirectory = Path.Combine(runDirectory, "tasks", FileNameSanitizer.Sanitize(prompt.Id)),
+                LastFailureReason = $"Not started because the run was blocked: {failureReason}"
+            });
+
+            await PublishAsync(
+                new RunEvent
+                {
+                    Kind = RunEventKind.TaskSkipped,
+                    RunId = runId,
+                    PromptId = prompt.Id,
+                    Title = prompt.Title,
+                    Agent = selection.EffectiveAgent,
+                    Status = RunStatus.Skipped,
+                    FailureReason = failureReason,
+                    Message = $"Task {prompt.Id} was not started because the run was blocked."
+                },
+                cancellationToken);
+        }
+    }
+
+    private async Task<string> PublishReportGeneratedAsync(
+        string runId,
+        string runDirectory,
+        CancellationToken cancellationToken)
+    {
+        var reportPath = Path.Combine(runDirectory, "final-report.md");
+        await PublishAsync(
+            new RunEvent
+            {
+                Kind = RunEventKind.ReportGenerated,
+                RunId = runId,
+                Message = $"Final report generated: {reportPath}",
+                Path = reportPath
+            },
+            cancellationToken);
+        return reportPath;
     }
 
     private void ApplyDetectedRateLimit(string agentName, AgentExecutionResult agentResult)
@@ -611,6 +877,8 @@ public sealed class BatchRunner(
             Rate limited: {agentResult.IsRateLimited}
             Rate limit reset at: {(agentResult.RateLimitResetAt.HasValue ? agentResult.RateLimitResetAt.Value.ToString("O") : "(unknown)")}
             Rate limit reason: {agentResult.RateLimitReason ?? "(none)"}
+            Toolchain failure: {agentResult.IsToolchainFailure}
+            Toolchain failure reason: {agentResult.ToolchainFailureReason ?? "(none)"}
             Session id: {agentResult.SessionId ?? "(none)"}
 
             STDOUT
@@ -620,6 +888,6 @@ public sealed class BatchRunner(
             {agentResult.StandardError}
             """;
 
-        await File.WriteAllTextAsync(path, SensitiveDataRedactor.Redact(content), cancellationToken);
+        await Utf8File.WriteAllTextAsync(path, SensitiveDataRedactor.Redact(content), cancellationToken);
     }
 }

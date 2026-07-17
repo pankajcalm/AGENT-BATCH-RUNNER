@@ -2,7 +2,7 @@ using AgentBatchRunner.Infrastructure;
 
 namespace AgentBatchRunner.Agents;
 
-public sealed class CodexAdapter(ProcessRunner processRunner, ConsoleLogger logger) : IAgentAdapter
+public sealed class CodexAdapter(ProcessRunner processRunner, ConsoleLogger logger, string? executablePath = null) : IAgentAdapter
 {
     public const string ExecutableName = "codex";
 
@@ -22,7 +22,7 @@ public sealed class CodexAdapter(ProcessRunner processRunner, ConsoleLogger logg
 
         var arguments = BuildArguments(request);
         var processResult = await processRunner.RunExecutableAsync(
-            ExecutableName,
+            request.ExecutablePath ?? executablePath ?? ExecutableName,
             arguments,
             request.RepoPath,
             cancellationToken,
@@ -68,7 +68,6 @@ public sealed class CodexAdapter(ProcessRunner processRunner, ConsoleLogger logg
             arguments.Add("resume");
             if (!string.IsNullOrWhiteSpace(request.SessionId))
             {
-                arguments.Add("--session");
                 arguments.Add(request.SessionId);
             }
             else

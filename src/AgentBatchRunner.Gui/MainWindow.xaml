@@ -39,7 +39,7 @@
             <Button Grid.Column="2" Width="88" Margin="0,0,8,0" Command="{Binding BrowseCommand}" Content="Browse" />
             <Button Grid.Column="3" Width="88" Margin="0,0,16,0" Command="{Binding ValidateCommand}" Content="Validate" />
             <TextBlock Grid.Column="4" Margin="0,0,8,0" VerticalAlignment="Center" FontWeight="SemiBold" Text="Agent" />
-            <ComboBox Grid.Column="5" Width="130" Margin="0,0,8,0" ItemsSource="{Binding AgentOptions}" SelectedItem="{Binding SelectedAgent, Mode=TwoWay}" />
+            <ComboBox Grid.Column="5" Width="220" Margin="0,0,8,0" ItemsSource="{Binding AgentOptions}" SelectedItem="{Binding SelectedAgent, Mode=TwoWay}" />
             <StackPanel Grid.Column="6" Orientation="Horizontal">
                 <Button Width="88" Margin="0,0,8,0" Command="{Binding RunCommand}" Content="Run" />
                 <Button Width="88" Command="{Binding CancelCommand}" Content="Cancel" />
@@ -82,6 +82,8 @@
                 <Grid.RowDefinitions>
                     <RowDefinition Height="Auto" />
                     <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
                 </Grid.RowDefinitions>
 
                 <TextBlock Grid.Row="0" Grid.Column="0" Margin="0,0,8,6" FontWeight="SemiBold" Text="Project" />
@@ -99,6 +101,18 @@
                 <TextBlock Grid.Row="1" Grid.Column="3" Margin="0,0,18,0" Text="{Binding VerifyTimeoutText}" />
                 <TextBlock Grid.Row="1" Grid.Column="4" Margin="0,0,8,0" FontWeight="SemiBold" Text="State" />
                 <TextBlock Grid.Row="1" Grid.Column="5" Margin="0,0,18,0" Text="{Binding RunStateText}" />
+
+                <TextBlock Grid.Row="2" Grid.Column="0" Margin="0,8,8,0" FontWeight="SemiBold" Text="Routing" />
+                <StackPanel Grid.Row="2" Grid.Column="1" Grid.ColumnSpan="7" Margin="0,8,0,0">
+                    <TextBlock Text="{Binding RoutingModeText}" TextWrapping="Wrap" />
+                    <TextBlock Foreground="#A13B00" FontWeight="SemiBold" Text="{Binding RoutingWarningText}" TextWrapping="Wrap" />
+                </StackPanel>
+
+                <TextBlock Grid.Row="3" Grid.Column="0" Margin="0,8,8,0" FontWeight="SemiBold" Text="Preflight" />
+                <StackPanel Grid.Row="3" Grid.Column="1" Grid.ColumnSpan="7" Margin="0,8,0,0">
+                    <TextBlock FontWeight="SemiBold" Text="{Binding PreflightStateText}" TextWrapping="Wrap" />
+                    <TextBlock FontFamily="Consolas" FontSize="12" Text="{Binding ToolchainDetailsText}" TextWrapping="Wrap" />
+                </StackPanel>
             </Grid>
         </Border>
 
@@ -134,6 +148,12 @@
                         <DataTrigger Binding="{Binding Status}" Value="RateLimited">
                             <Setter Property="Background" Value="#EDE7F6" />
                         </DataTrigger>
+                        <DataTrigger Binding="{Binding Status}" Value="ToolchainFailure">
+                            <Setter Property="Background" Value="#F8D7DA" />
+                        </DataTrigger>
+                        <DataTrigger Binding="{Binding Status}" Value="Skipped">
+                            <Setter Property="Background" Value="#F1F3F5" />
+                        </DataTrigger>
                         <DataTrigger Binding="{Binding Status}" Value="Canceled">
                             <Setter Property="Background" Value="#ECEFF1" />
                         </DataTrigger>
@@ -143,7 +163,7 @@
             <DataGrid.Columns>
                 <DataGridTextColumn Width="90" Binding="{Binding Id}" Header="ID" />
                 <DataGridTextColumn Width="2*" Binding="{Binding Title}" Header="Title" />
-                <DataGridTextColumn Width="100" Binding="{Binding Agent}" Header="Agent" />
+                <DataGridTextColumn Width="110" Binding="{Binding Agent}" Header="Effective agent" />
                 <DataGridTextColumn Width="90" Binding="{Binding CurrentAttempt}" Header="Attempt" />
                 <DataGridTextColumn Width="90" Binding="{Binding MaxAttempts}" Header="Max" />
                 <DataGridTextColumn Width="140" Binding="{Binding Status}" Header="Status" />

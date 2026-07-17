@@ -12,6 +12,7 @@ public enum RunStatus
     /// </summary>
     UnverifiedSuccess,
     Failed,
+    ToolchainFailure,
     RateLimited,
     NeedsHumanReview,
     Skipped

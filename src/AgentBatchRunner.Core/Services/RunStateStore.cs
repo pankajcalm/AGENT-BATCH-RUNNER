@@ -1,5 +1,6 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using AgentBatchRunner.Infrastructure;
 using AgentBatchRunner.Models;
 
 namespace AgentBatchRunner.Services;
@@ -28,23 +29,23 @@ public sealed class RunStateStore
             Directory.CreateDirectory(directory);
         }
 
-        await using var stream = File.Create(path);
-        await JsonSerializer.SerializeAsync(stream, value, JsonOptions, cancellationToken);
+        var json = JsonSerializer.Serialize(value, JsonOptions);
+        await Utf8File.WriteAllTextAsync(path, json, cancellationToken);
     }
 
     public async Task<BatchConfig> LoadConfigAsync(string runDirectory, CancellationToken cancellationToken = default)
     {
         var path = Path.Combine(runDirectory, "run-config.normalized.json");
-        await using var stream = File.OpenRead(path);
-        return await JsonSerializer.DeserializeAsync<BatchConfig>(stream, JsonOptions, cancellationToken)
+        var json = await Utf8File.ReadAllTextAsync(path, cancellationToken);
+        return JsonSerializer.Deserialize<BatchConfig>(json, JsonOptions)
             ?? throw new InvalidOperationException($"Could not load run config from {path}.");
     }
 
     public async Task<RunResult> LoadRunResultAsync(string runDirectory, CancellationToken cancellationToken = default)
     {
         var path = Path.Combine(runDirectory, "run-summary.json");
-        await using var stream = File.OpenRead(path);
-        return await JsonSerializer.DeserializeAsync<RunResult>(stream, JsonOptions, cancellationToken)
+        var json = await Utf8File.ReadAllTextAsync(path, cancellationToken);
+        return JsonSerializer.Deserialize<RunResult>(json, JsonOptions)
             ?? throw new InvalidOperationException($"Could not load run summary from {path}.");
     }
 

@@ -1,4 +1,5 @@
 using System.Text;
+using AgentBatchRunner.Infrastructure;
 using AgentBatchRunner.Models;
 
 namespace AgentBatchRunner.Services;
@@ -12,7 +13,10 @@ public sealed class ReportGenerator(RunStateStore runStateStore)
     {
         await runStateStore.SaveJsonAsync(Path.Combine(runDirectory, "run-summary.json"), result, cancellationToken);
         var report = BuildMarkdown(result);
-        await File.WriteAllTextAsync(Path.Combine(runDirectory, "final-report.md"), report, cancellationToken);
+        await Utf8File.WriteAllTextAsync(
+            Path.Combine(runDirectory, "final-report.md"),
+            report,
+            cancellationToken);
     }
 
     public string BuildMarkdown(RunResult result)
@@ -28,19 +32,34 @@ public sealed class ReportGenerator(RunStateStore runStateStore)
         builder.AppendLine($"- Failed: {result.Failed}");
         builder.AppendLine($"- Needs human review: {result.NeedsHumanReview}");
         builder.AppendLine($"- Rate limited: {result.RateLimited}");
+        builder.AppendLine($"- Toolchain failures: {result.ToolchainFailures}");
+        builder.AppendLine($"- Skipped: {result.Skipped}");
         builder.AppendLine($"- Timed out tasks: {result.TimedOutTasks}");
         builder.AppendLine($"- Timed out attempts: {result.TimedOutAttempts}");
         builder.AppendLine($"- Started: {result.StartedAt:O}");
         builder.AppendLine($"- Completed: {(result.CompletedAt.HasValue ? result.CompletedAt.Value.ToString("O") : "(not completed)")}");
         builder.AppendLine();
+        builder.AppendLine("## Routing");
+        builder.AppendLine();
+        builder.AppendLine($"- Default agent: {Display(result.DefaultAgent)}");
+        builder.AppendLine($"- Run override: {Display(result.AgentOverride)}");
+        builder.AppendLine($"- Routing mode: {(string.IsNullOrWhiteSpace(result.AgentOverride) ? "From YAML" : $"Global override: {result.AgentOverride}")}");
+        builder.AppendLine();
+        AppendToolchains(builder, result);
+        builder.AppendLine();
+        AppendRunBlocker(builder, result);
+        builder.AppendLine();
         builder.AppendLine("## Task Results");
         builder.AppendLine();
-        builder.AppendLine("| ID | Title | Agent | Attempts | Status |");
-        builder.AppendLine("|---|---|---:|---:|---|");
+        builder.AppendLine("| ID | Title | Configured Agent | Default Agent | Run Override | Effective Agent | Attempts | Status |");
+        builder.AppendLine("|---|---|---|---|---|---|---:|---|");
 
         foreach (var task in result.Tasks)
         {
-            builder.AppendLine($"| {Escape(task.Id)} | {Escape(task.Title)} | {Escape(task.Agent)} | {task.Attempts.Count} | {task.Status} |");
+            builder.AppendLine(
+                $"| {Escape(task.Id)} | {Escape(task.Title)} | {Escape(Display(task.ConfiguredAgent))} | " +
+                $"{Escape(Display(task.DefaultAgent))} | {Escape(Display(task.AgentOverride))} | " +
+                $"{Escape(task.Agent)} | {task.Attempts.Count} | {task.Status} |");
         }
 
         builder.AppendLine();
@@ -50,7 +69,7 @@ public sealed class ReportGenerator(RunStateStore runStateStore)
         builder.AppendLine();
 
         var failedTasks = result.Tasks
-            .Where(t => t.Status is RunStatus.Failed or RunStatus.NeedsHumanReview)
+            .Where(t => t.Status is RunStatus.Failed or RunStatus.NeedsHumanReview or RunStatus.ToolchainFailure)
             .ToList();
 
         if (failedTasks.Count == 0)
@@ -74,6 +93,42 @@ public sealed class ReportGenerator(RunStateStore runStateStore)
         }
 
         return builder.ToString();
+    }
+
+    private static void AppendToolchains(StringBuilder builder, RunResult result)
+    {
+        builder.AppendLine("## Agent Toolchains");
+        builder.AppendLine();
+
+        if (result.Toolchains.Count == 0)
+        {
+            builder.AppendLine("No external agent toolchains were recorded.");
+            return;
+        }
+
+        builder.AppendLine("| Agent | Executable | Version | Preflight | Failure | ");
+        builder.AppendLine("|---|---|---|---|---|");
+        foreach (var toolchain in result.Toolchains)
+        {
+            builder.AppendLine(
+                $"| {Escape(toolchain.AgentName)} | {Escape(Display(toolchain.ExecutablePath))} | " +
+                $"{Escape(Display(toolchain.Version))} | {toolchain.Status} | {Escape(Display(toolchain.FailureReason))} |");
+        }
+    }
+
+    private static void AppendRunBlocker(StringBuilder builder, RunResult result)
+    {
+        builder.AppendLine("## Run-Level Blocker");
+        builder.AppendLine();
+        if (result.FailureKind == RunFailureKind.None)
+        {
+            builder.AppendLine("No run-level blocker was recorded.");
+            return;
+        }
+
+        builder.AppendLine($"- Classification: {result.FailureKind}");
+        builder.AppendLine($"- Reason: {result.RunFailureReason ?? "(not recorded)"}");
+        builder.AppendLine("- Suggested next step: Correct the configured agent executable or version, restart AgentBatchRunner if PATH changed, and resume the run.");
     }
 
     private static void AppendRateLimitedTasks(StringBuilder builder, RunResult result)
@@ -109,5 +164,10 @@ public sealed class ReportGenerator(RunStateStore runStateStore)
     private static string Escape(string value)
     {
         return value.Replace("|", "\\|", StringComparison.Ordinal);
+    }
+
+    private static string Display(string? value)
+    {
+        return string.IsNullOrWhiteSpace(value) ? "(none)" : value;
     }
 }

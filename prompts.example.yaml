@@ -4,6 +4,11 @@ defaultAgent: dryrun
 defaultMaxRetries: 3
 defaultAgentTimeoutSeconds: 1800
 defaultVerifyTimeoutSeconds: 900
+minimumCodexVersion: 0.144.5
+# Optional absolute paths. Configuration overrides environment variables,
+# the native Windows Codex installation, and PATH discovery.
+# codexExecutablePath: C:\Tools\OpenAI Codex\codex.exe
+# claudeExecutablePath: C:\Tools\Claude\claude.exe
 
 prompts:
   - id: P001
