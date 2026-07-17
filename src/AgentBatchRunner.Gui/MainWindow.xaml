@@ -1,0 +1,270 @@
+<Window x:Class="AgentBatchRunner.Gui.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        mc:Ignorable="d"
+        Title="AgentBatchRunner"
+        MinHeight="720"
+        MinWidth="1120"
+        Height="820"
+        Width="1280">
+    <Grid Margin="12">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="2*" />
+            <RowDefinition Height="3*" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <Grid Grid.Row="0">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+            </Grid.RowDefinitions>
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+
+            <TextBlock Grid.Column="0" Margin="0,0,8,0" VerticalAlignment="Center" FontWeight="SemiBold" Text="Prompt file" />
+            <TextBox Grid.Column="1" MinWidth="420" Margin="0,0,8,0" IsReadOnly="True" Text="{Binding PromptFilePath, UpdateSourceTrigger=PropertyChanged}" />
+            <Button Grid.Column="2" Width="88" Margin="0,0,8,0" Command="{Binding BrowseCommand}" Content="Browse" />
+            <Button Grid.Column="3" Width="88" Margin="0,0,16,0" Command="{Binding ValidateCommand}" Content="Validate" />
+            <TextBlock Grid.Column="4" Margin="0,0,8,0" VerticalAlignment="Center" FontWeight="SemiBold" Text="Agent" />
+            <ComboBox Grid.Column="5" Width="130" Margin="0,0,8,0" ItemsSource="{Binding AgentOptions}" SelectedItem="{Binding SelectedAgent, Mode=TwoWay}" />
+            <StackPanel Grid.Column="6" Orientation="Horizontal">
+                <Button Width="88" Margin="0,0,8,0" Command="{Binding RunCommand}" Content="Run" />
+                <Button Width="88" Command="{Binding CancelCommand}" Content="Cancel" />
+            </StackPanel>
+
+            <TextBlock Grid.Row="1" Grid.Column="0" Margin="0,8,8,0" VerticalAlignment="Center" FontWeight="SemiBold" Text="Recent" />
+            <ComboBox Grid.Row="1"
+                      Grid.Column="1"
+                      Grid.ColumnSpan="5"
+                      Margin="0,8,8,0"
+                      IsEnabled="{Binding HasRecentFiles}"
+                      ItemsSource="{Binding RecentPromptFiles}"
+                      SelectedItem="{Binding SelectedRecentPromptFile, Mode=TwoWay}" />
+            <Button Grid.Row="1" Grid.Column="6" Width="110" Margin="0,8,0,0" Command="{Binding ClearRecentFilesCommand}" Content="Clear Recent" />
+
+            <TextBlock Grid.Row="2" Grid.Column="0" Margin="0,8,8,0" VerticalAlignment="Center" FontWeight="SemiBold" Text="Limits" />
+            <StackPanel Grid.Row="2" Grid.Column="1" Grid.ColumnSpan="6" Margin="0,8,0,0" Orientation="Horizontal">
+                <TextBlock MinWidth="130" Margin="0,0,16,0" VerticalAlignment="Center" Text="{Binding DryRunAvailabilityText}" />
+                <TextBlock MinWidth="210" Margin="0,0,16,0" VerticalAlignment="Center" Text="{Binding ClaudeAvailabilityText}" />
+                <TextBlock MinWidth="210" Margin="0,0,16,0" VerticalAlignment="Center" Text="{Binding CodexAvailabilityText}" />
+                <TextBlock Margin="0,0,16,0" VerticalAlignment="Center" FontWeight="SemiBold" Text="{Binding SelectedAgentAvailabilityText}" />
+                <Button Width="132" Margin="0,0,8,0" Command="{Binding RefreshAgentLimitsCommand}" Content="Refresh Agent Limits" />
+                <Button Width="150" Margin="0,0,8,0" Command="{Binding SetLimitManuallyCommand}" Content="Set Agent Limit Manually" />
+                <Button Width="132" Command="{Binding ClearLimitManuallyCommand}" Content="Clear Limit Manually" />
+            </StackPanel>
+        </Grid>
+
+        <Border Grid.Row="1" Margin="0,12,0,12" Padding="10" BorderBrush="#D0D7DE" BorderThickness="1" CornerRadius="6">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="2*" />
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="3*" />
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="*" />
+                </Grid.ColumnDefinitions>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                </Grid.RowDefinitions>
+
+                <TextBlock Grid.Row="0" Grid.Column="0" Margin="0,0,8,6" FontWeight="SemiBold" Text="Project" />
+                <TextBlock Grid.Row="0" Grid.Column="1" Margin="0,0,18,6" Text="{Binding ProjectName}" />
+                <TextBlock Grid.Row="0" Grid.Column="2" Margin="0,0,8,6" FontWeight="SemiBold" Text="Repo" />
+                <TextBlock Grid.Row="0" Grid.Column="3" Margin="0,0,18,6" Text="{Binding RepoPath}" TextTrimming="CharacterEllipsis" />
+                <TextBlock Grid.Row="0" Grid.Column="4" Margin="0,0,8,6" FontWeight="SemiBold" Text="Default agent" />
+                <TextBlock Grid.Row="0" Grid.Column="5" Margin="0,0,18,6" Text="{Binding DefaultAgent}" />
+                <TextBlock Grid.Row="0" Grid.Column="6" Margin="0,0,8,6" FontWeight="SemiBold" Text="Run ID" />
+                <TextBlock Grid.Row="0" Grid.Column="7" Margin="0,0,0,6" Text="{Binding CurrentRunId}" />
+
+                <TextBlock Grid.Row="1" Grid.Column="0" Margin="0,0,8,0" FontWeight="SemiBold" Text="Agent timeout" />
+                <TextBlock Grid.Row="1" Grid.Column="1" Margin="0,0,18,0" Text="{Binding AgentTimeoutText}" />
+                <TextBlock Grid.Row="1" Grid.Column="2" Margin="0,0,8,0" FontWeight="SemiBold" Text="Verify timeout" />
+                <TextBlock Grid.Row="1" Grid.Column="3" Margin="0,0,18,0" Text="{Binding VerifyTimeoutText}" />
+                <TextBlock Grid.Row="1" Grid.Column="4" Margin="0,0,8,0" FontWeight="SemiBold" Text="State" />
+                <TextBlock Grid.Row="1" Grid.Column="5" Margin="0,0,18,0" Text="{Binding RunStateText}" />
+            </Grid>
+        </Border>
+
+        <DataGrid Grid.Row="2"
+                  AutoGenerateColumns="False"
+                  CanUserAddRows="False"
+                  CanUserDeleteRows="False"
+                  IsReadOnly="True"
+                  ItemsSource="{Binding PromptTasks}"
+                  SelectedItem="{Binding SelectedTask, Mode=TwoWay}"
+                  SelectionMode="Single">
+            <DataGrid.RowStyle>
+                <Style TargetType="DataGridRow">
+                    <Style.Triggers>
+                        <DataTrigger Binding="{Binding Status}" Value="Running">
+                            <Setter Property="Background" Value="#FFF8E1" />
+                        </DataTrigger>
+                        <DataTrigger Binding="{Binding Status}" Value="Succeeded">
+                            <Setter Property="Background" Value="#E8F5E9" />
+                        </DataTrigger>
+                        <DataTrigger Binding="{Binding Status}" Value="UnverifiedSuccess">
+                            <Setter Property="Background" Value="#E3F2FD" />
+                        </DataTrigger>
+                        <DataTrigger Binding="{Binding Status}" Value="NeedsHumanReview">
+                            <Setter Property="Background" Value="#FCE4EC" />
+                        </DataTrigger>
+                        <DataTrigger Binding="{Binding Status}" Value="Failed">
+                            <Setter Property="Background" Value="#FFEBEE" />
+                        </DataTrigger>
+                        <DataTrigger Binding="{Binding Status}" Value="TimedOut">
+                            <Setter Property="Background" Value="#FFF3E0" />
+                        </DataTrigger>
+                        <DataTrigger Binding="{Binding Status}" Value="RateLimited">
+                            <Setter Property="Background" Value="#EDE7F6" />
+                        </DataTrigger>
+                        <DataTrigger Binding="{Binding Status}" Value="Canceled">
+                            <Setter Property="Background" Value="#ECEFF1" />
+                        </DataTrigger>
+                    </Style.Triggers>
+                </Style>
+            </DataGrid.RowStyle>
+            <DataGrid.Columns>
+                <DataGridTextColumn Width="90" Binding="{Binding Id}" Header="ID" />
+                <DataGridTextColumn Width="2*" Binding="{Binding Title}" Header="Title" />
+                <DataGridTextColumn Width="100" Binding="{Binding Agent}" Header="Agent" />
+                <DataGridTextColumn Width="90" Binding="{Binding CurrentAttempt}" Header="Attempt" />
+                <DataGridTextColumn Width="90" Binding="{Binding MaxAttempts}" Header="Max" />
+                <DataGridTextColumn Width="140" Binding="{Binding Status}" Header="Status" />
+                <DataGridTextColumn Width="3*" Binding="{Binding LastMessage}" Header="Last message" />
+                <DataGridTextColumn Width="110" Binding="{Binding DurationText}" Header="Duration" />
+            </DataGrid.Columns>
+        </DataGrid>
+
+        <Grid Grid.Row="3" Margin="0,12,0,12">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="2*" />
+                <ColumnDefinition Width="3*" />
+            </Grid.ColumnDefinitions>
+
+            <GroupBox Grid.Column="0" Margin="0,0,8,0" Header="Live log">
+                <ListBox ItemsSource="{Binding LogEntries}">
+                    <ListBox.ItemTemplate>
+                        <DataTemplate>
+                            <TextBlock FontFamily="Consolas" FontSize="12" Text="{Binding DisplayText}" TextWrapping="Wrap" />
+                        </DataTemplate>
+                    </ListBox.ItemTemplate>
+                </ListBox>
+            </GroupBox>
+
+            <GroupBox Grid.Column="1" Header="Selected task details">
+                <Grid Margin="8">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="*" />
+                        <RowDefinition Height="*" />
+                        <RowDefinition Height="*" />
+                        <RowDefinition Height="*" />
+                    </Grid.RowDefinitions>
+
+                    <Grid Grid.Row="0" Margin="0,0,0,8">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                        </Grid.RowDefinitions>
+                        <TextBlock Grid.Row="0" Grid.Column="0" Margin="0,0,8,4" FontWeight="SemiBold" Text="Output folder" />
+                        <TextBlock Grid.Row="0" Grid.Column="1" Grid.ColumnSpan="3" Margin="0,0,0,4" Text="{Binding SelectedTask.TaskOutputFolder}" TextTrimming="CharacterEllipsis" />
+                        <TextBlock Grid.Row="1" Grid.Column="0" Margin="0,0,8,4" FontWeight="SemiBold" Text="Agent" />
+                        <TextBlock Grid.Row="1" Grid.Column="1" Margin="0,0,16,4" Text="{Binding SelectedTask.Agent}" />
+                        <TextBlock Grid.Row="1" Grid.Column="2" Margin="0,0,8,4" FontWeight="SemiBold" Text="Exit code" />
+                        <TextBlock Grid.Row="1" Grid.Column="3" Margin="0,0,0,4" Text="{Binding SelectedTask.ExitCodeText}" />
+                        <TextBlock Grid.Row="2" Grid.Column="0" Margin="0,0,8,4" FontWeight="SemiBold" Text="Command" />
+                        <TextBlock Grid.Row="2" Grid.Column="1" Grid.ColumnSpan="3" Margin="0,0,0,4" Text="{Binding SelectedTask.Command}" TextWrapping="Wrap" />
+                        <TextBlock Grid.Row="3" Grid.Column="0" Margin="0,0,8,4" FontWeight="SemiBold" Text="Working dir" />
+                        <TextBlock Grid.Row="3" Grid.Column="1" Grid.ColumnSpan="3" Margin="0,0,0,4" Text="{Binding SelectedTask.WorkingDirectory}" TextTrimming="CharacterEllipsis" />
+                        <TextBlock Grid.Row="4" Grid.Column="0" Margin="0,0,8,4" FontWeight="SemiBold" Text="Timed out" />
+                        <TextBlock Grid.Row="4" Grid.Column="1" Margin="0,0,16,4" Text="{Binding SelectedTask.TimedOutText}" />
+                        <TextBlock Grid.Row="4" Grid.Column="2" Margin="0,0,8,4" FontWeight="SemiBold" Text="Timeout" />
+                        <TextBlock Grid.Row="4" Grid.Column="3" Margin="0,0,0,4" Text="{Binding SelectedTask.TimeoutText}" />
+                        <TextBlock Grid.Row="5" Grid.Column="0" Margin="0,0,8,4" FontWeight="SemiBold" Text="Failure" />
+                        <TextBlock Grid.Row="5" Grid.Column="1" Grid.ColumnSpan="3" Margin="0,0,0,4" Text="{Binding SelectedTask.FailureSummary}" TextWrapping="Wrap" />
+                        <TextBlock Grid.Row="6" Grid.Column="0" Margin="0,0,8,4" FontWeight="SemiBold" Text="Exception" />
+                        <TextBlock Grid.Row="6" Grid.Column="1" Grid.ColumnSpan="3" Margin="0,0,0,4" Text="{Binding SelectedTask.ExceptionDetails}" TextWrapping="Wrap" />
+                        <TextBlock Grid.Row="7" Grid.Column="0" Margin="0,0,8,0" FontWeight="SemiBold" Text="Files" />
+                        <TextBlock Grid.Row="7" Grid.Column="1" Grid.ColumnSpan="3" TextWrapping="Wrap">
+                            <Run Text="status: " />
+                            <Run Text="{Binding SelectedTask.AttemptStatusFilePath}" />
+                            <LineBreak />
+                            <Run Text="agent: " />
+                            <Run Text="{Binding SelectedTask.AgentOutputFilePath}" />
+                            <LineBreak />
+                            <Run Text="verify: " />
+                            <Run Text="{Binding SelectedTask.VerificationLogPath}" />
+                        </TextBlock>
+                    </Grid>
+
+                    <GroupBox Grid.Row="1" Margin="0,0,0,8" Header="Prompt">
+                        <TextBox IsReadOnly="True" Text="{Binding SelectedTask.PromptText}" TextWrapping="Wrap" VerticalScrollBarVisibility="Auto" />
+                    </GroupBox>
+                    <GroupBox Grid.Row="2" Margin="0,0,0,8" Header="Agent diagnostics">
+                        <TabControl>
+                            <TabItem Header="Output file">
+                                <TextBox FontFamily="Consolas" FontSize="12" IsReadOnly="True" Text="{Binding SelectedTask.LatestAgentOutput}" TextWrapping="Wrap" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto" />
+                            </TabItem>
+                            <TabItem Header="Stdout">
+                                <TextBox FontFamily="Consolas" FontSize="12" IsReadOnly="True" Text="{Binding SelectedTask.Stdout}" TextWrapping="Wrap" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto" />
+                            </TabItem>
+                            <TabItem Header="Stderr">
+                                <TextBox FontFamily="Consolas" FontSize="12" IsReadOnly="True" Text="{Binding SelectedTask.Stderr}" TextWrapping="Wrap" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto" />
+                            </TabItem>
+                            <TabItem Header="Combined">
+                                <TextBox FontFamily="Consolas" FontSize="12" IsReadOnly="True" Text="{Binding SelectedTask.CombinedOutput}" TextWrapping="Wrap" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto" />
+                            </TabItem>
+                        </TabControl>
+                    </GroupBox>
+                    <GroupBox Grid.Row="3" Margin="0,0,0,8" Header="Latest verification output">
+                        <TextBox FontFamily="Consolas" FontSize="12" IsReadOnly="True" Text="{Binding SelectedTask.LatestVerificationOutput}" TextWrapping="Wrap" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto" />
+                    </GroupBox>
+                    <StackPanel Grid.Row="4" Orientation="Horizontal" HorizontalAlignment="Right">
+                        <Button Width="118" Margin="0,0,8,0" Command="{Binding OpenTaskFolderCommand}" Content="Open Task Folder" />
+                        <Button Width="150" Command="{Binding OpenLatestAttemptFolderCommand}" Content="Open Latest Attempt Folder" />
+                    </StackPanel>
+                </Grid>
+            </GroupBox>
+        </Grid>
+
+        <DockPanel Grid.Row="4" LastChildFill="True">
+            <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
+                <Button Width="110" Margin="8,0,0,0" Command="{Binding OpenReportCommand}" Content="Open Report" />
+                <Button Width="120" Margin="8,0,0,0" Command="{Binding OpenRunFolderCommand}" Content="Open Run Folder" />
+            </StackPanel>
+            <StackPanel>
+                <TextBlock VerticalAlignment="Center" Text="{Binding FinalReportPath}" TextTrimming="CharacterEllipsis" />
+                <TextBlock Foreground="#8A5A00" Text="{Binding ReportStatusText}" TextWrapping="Wrap" />
+            </StackPanel>
+        </DockPanel>
+    </Grid>
+</Window>

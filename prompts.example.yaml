@@ -1,0 +1,18 @@
+project: AgentBatchRunner.Sample
+repoPath: C:\TEMP\SomeRepository
+defaultAgent: dryrun
+defaultMaxRetries: 3
+defaultAgentTimeoutSeconds: 1800
+defaultVerifyTimeoutSeconds: 900
+
+prompts:
+  - id: P001
+    title: Build the repository
+    prompt: >
+      Inspect the repository and fix any build failures without changing
+      unrelated behavior.
+    verify:
+      - dotnet build
+    maxRetries: 3
+    agentTimeoutSeconds: 1800
+    verifyTimeoutSeconds: 900

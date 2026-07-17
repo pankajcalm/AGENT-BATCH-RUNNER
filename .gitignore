@@ -1,0 +1,7 @@
+bin/
+obj/
+.vs/
+.agentbatchrunner/
+TestResults/
+*.user
+.claude/settings.local.json
