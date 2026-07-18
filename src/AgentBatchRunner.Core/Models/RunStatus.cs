@@ -14,6 +14,11 @@ public enum RunStatus
     Failed,
     ToolchainFailure,
     RateLimited,
+    Blocked,
+    NeedsHumanDecision,
+    PrerequisiteMissing,
+    Canceled,
+    TimedOut,
     NeedsHumanReview,
     Skipped
 }

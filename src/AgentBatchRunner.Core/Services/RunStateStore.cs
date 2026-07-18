@@ -49,6 +49,29 @@ public sealed class RunStateStore
             ?? throw new InvalidOperationException($"Could not load run summary from {path}.");
     }
 
+    public Task SaveRoutingAsync(
+        string runDirectory,
+        RunRoutingSnapshot snapshot,
+        CancellationToken cancellationToken = default)
+    {
+        return SaveJsonAsync(Path.Combine(runDirectory, "run-routing.json"), snapshot, cancellationToken);
+    }
+
+    public async Task<RunRoutingSnapshot> LoadRoutingAsync(
+        string runDirectory,
+        CancellationToken cancellationToken = default)
+    {
+        var path = Path.Combine(runDirectory, "run-routing.json");
+        if (!File.Exists(path))
+        {
+            return new RunRoutingSnapshot { RunId = Path.GetFileName(runDirectory) };
+        }
+
+        var json = await Utf8File.ReadAllTextAsync(path, cancellationToken);
+        return JsonSerializer.Deserialize<RunRoutingSnapshot>(json, JsonOptions)
+            ?? new RunRoutingSnapshot { RunId = Path.GetFileName(runDirectory) };
+    }
+
     public string? FindLatestRunDirectory(string startDirectory)
     {
         var runsDirectory = FindRunsDirectory(startDirectory);

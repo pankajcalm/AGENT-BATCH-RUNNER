@@ -8,6 +8,34 @@ public static class PromptTaskDiagnosticsMapper
 {
     public static void ApplyRunEvent(PromptTaskViewModel task, RunEvent runEvent)
     {
+        if (!string.IsNullOrWhiteSpace(runEvent.BaseAgent))
+        {
+            task.BaseAgent = runEvent.BaseAgent;
+        }
+
+        if (!string.IsNullOrWhiteSpace(runEvent.EffectiveAgent))
+        {
+            task.EffectiveAgent = runEvent.EffectiveAgent;
+        }
+
+        if (!string.IsNullOrWhiteSpace(runEvent.AttemptAgent))
+        {
+            task.LatestAttemptAgent = runEvent.AttemptAgent;
+        }
+
+        if (runEvent.RoutingReason.HasValue)
+        {
+            task.RoutingReason = runEvent.RoutingReason.Value.ToString();
+        }
+
+        if (runEvent.AgentOutcome is not null)
+        {
+            task.AgentOutcomeText = runEvent.AgentOutcome.AgentOutcome.ToString();
+            task.BlockerCode = runEvent.AgentOutcome.BlockerCode ?? string.Empty;
+            task.RecommendedNextFile = runEvent.AgentOutcome.RecommendedNext ?? string.Empty;
+            task.LastFailureReason = runEvent.AgentOutcome.Blocker ?? task.LastFailureReason;
+        }
+
         if (!string.IsNullOrWhiteSpace(runEvent.Command))
         {
             task.Command = runEvent.Command;
@@ -85,11 +113,21 @@ public static class PromptTaskDiagnosticsMapper
         string? failedCommand,
         string? lastFailureReason)
     {
-        task.Agent = agent;
+        task.EffectiveAgent = agent;
+        task.LatestAttemptAgent = string.IsNullOrWhiteSpace(attempt.AttemptAgent)
+            ? attempt.AgentResult?.AgentName ?? agent
+            : attempt.AttemptAgent;
+        task.RoutingReason = attempt.RoutingReason.ToString();
         task.CurrentAttempt = attempt.AttemptNumber;
         task.WorkingDirectory = workingDirectory;
         task.LatestAttemptFolder = attempt.AttemptDirectory;
         task.AttemptStatusFilePath = Path.Combine(attempt.AttemptDirectory, "status.json");
+        if (attempt.AgentOutcome is not null)
+        {
+            task.AgentOutcomeText = attempt.AgentOutcome.AgentOutcome.ToString();
+            task.BlockerCode = attempt.AgentOutcome.BlockerCode ?? string.Empty;
+            task.RecommendedNextFile = attempt.AgentOutcome.RecommendedNext ?? string.Empty;
+        }
 
         if (attempt.AgentResult is not null)
         {

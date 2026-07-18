@@ -1,7 +1,10 @@
 using System.Windows;
+using System.Windows.Controls;
+using System.Windows.Input;
 using AgentBatchRunner.Gui.Models;
 using AgentBatchRunner.Gui.Services;
 using AgentBatchRunner.Gui.ViewModels;
+using AgentBatchRunner.Models;
 
 namespace AgentBatchRunner.Gui;
 
@@ -13,10 +16,59 @@ public partial class MainWindow : Window
         return dialog.ShowDialog() == true ? dialog.Result : null;
     }
 
+    private ManualAgentSwitchInput? PromptForManualAgentSwitch(ManualAgentSwitchContext context)
+    {
+        var dialog = new AgentSwitchDialog(context) { Owner = this };
+        return dialog.ShowDialog() == true ? dialog.Result : null;
+    }
+
+    private string? PromptForPipelineFolder()
+    {
+        var dialog = new Microsoft.Win32.OpenFolderDialog
+        {
+            Title = "Select AgentBatchRunner pipeline folder",
+            Multiselect = false
+        };
+        return dialog.ShowDialog(this) == true ? dialog.FolderName : null;
+    }
+
+    private bool ConfirmPipelineNext(string message)
+    {
+        return MessageBox.Show(
+                   this,
+                   message,
+                   "Confirm next pipeline file",
+                   MessageBoxButton.YesNo,
+                   MessageBoxImage.Question,
+                   MessageBoxResult.No) == MessageBoxResult.Yes;
+    }
+
+    private PipelineManualActionRequest? PromptForPipelineManualAction(
+        PipelineManualActionDialogContext context)
+    {
+        var dialog = new PipelineManualActionDialog(context) { Owner = this };
+        return dialog.ShowDialog() == true ? dialog.Result : null;
+    }
+
+    private PipelineStartFromDialogResult? PromptForPipelineStartFrom(PipelineStartFromPlan plan)
+    {
+        var dialog = new PipelineStartFromDialog(plan) { Owner = this };
+        return dialog.ShowDialog() == true ? dialog.Result : null;
+    }
+
     public MainWindow()
     {
         InitializeComponent();
-        var viewModel = new MainWindowViewModel(Dispatcher, new GuiSettingsStore(), null, PromptForManualAgentLimit);
+        var viewModel = new MainWindowViewModel(
+            Dispatcher,
+            new GuiSettingsStore(),
+            null,
+            PromptForManualAgentLimit,
+            manualSwitchPrompt: PromptForManualAgentSwitch,
+            pipelineFolderPrompt: PromptForPipelineFolder,
+            pipelineConfirmation: ConfirmPipelineNext,
+            pipelineManualActionPrompt: PromptForPipelineManualAction,
+            pipelineStartFromPrompt: PromptForPipelineStartFrom);
         DataContext = viewModel;
         Loaded += (_, _) => RestoreWindowPlacement(viewModel.CurrentSettings);
         Closing += (_, _) => viewModel.SaveWindowPlacement(
@@ -73,5 +125,21 @@ public partial class MainWindow : Window
                top + visibleHeight > virtualTop &&
                left < virtualRight - 50 &&
                top < virtualBottom - 50;
+    }
+
+    private void PipelineQueue_OnPreviewMouseRightButtonDown(
+        object sender,
+        MouseButtonEventArgs e)
+    {
+        if (sender is not DataGrid dataGrid || e.OriginalSource is not DependencyObject source)
+        {
+            return;
+        }
+
+        if (ItemsControl.ContainerFromElement(dataGrid, source) is DataGridRow row)
+        {
+            dataGrid.SelectedItem = row.Item;
+            row.IsSelected = true;
+        }
     }
 }

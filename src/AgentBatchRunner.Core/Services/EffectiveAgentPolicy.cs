@@ -41,8 +41,8 @@ public sealed class EffectiveAgentPolicy
             }
         }
 
-        var effectiveAgent = normalizedOverride ?? configuredAgent ?? defaultAgent;
-        if (effectiveAgent is null)
+        var baseAgent = normalizedOverride ?? configuredAgent ?? defaultAgent;
+        if (baseAgent is null)
         {
             selection = null;
             error = $"Prompt '{prompt.Id}' has no agent and no usable defaultAgent.";
@@ -55,7 +55,13 @@ public sealed class EffectiveAgentPolicy
             ConfiguredAgent = configuredAgent,
             DefaultAgent = defaultAgent,
             RunOverride = normalizedOverride,
-            EffectiveAgent = effectiveAgent
+            BaseAgent = baseAgent,
+            BaseRoutingReason = normalizedOverride is not null
+                ? AgentRoutingReason.GlobalOverride
+                : configuredAgent is not null
+                    ? AgentRoutingReason.Yaml
+                    : AgentRoutingReason.Default,
+            EffectiveAgent = baseAgent
         };
         error = string.Empty;
         return true;
@@ -98,6 +104,10 @@ public sealed class EffectiveAgentSelection
     public string? DefaultAgent { get; init; }
 
     public string? RunOverride { get; init; }
+
+    public string BaseAgent { get; init; } = string.Empty;
+
+    public AgentRoutingReason BaseRoutingReason { get; init; }
 
     public string EffectiveAgent { get; init; } = string.Empty;
 }

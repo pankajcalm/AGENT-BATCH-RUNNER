@@ -17,6 +17,7 @@ public sealed class MainWindowViewModel : ViewModelBase
     private readonly GuiSettingsStore _settingsStore;
     private readonly GuiSettings _settings;
     private readonly Func<string, ManualAgentLimitInput?>? _manualLimitPrompt;
+    private readonly Func<ManualAgentSwitchContext, ManualAgentSwitchInput?>? _manualSwitchPrompt;
     private readonly EffectiveAgentPolicy _effectiveAgentPolicy = new();
     private BatchConfig? _config;
     private AgentPreflightResult? _preflightResult;
@@ -57,11 +58,17 @@ public sealed class MainWindowViewModel : ViewModelBase
         GuiSettingsStore settingsStore,
         AgentRateLimitStateStore? rateLimitStateStore = null,
         Func<string, ManualAgentLimitInput?>? manualLimitPrompt = null,
-        IAgentPreflightService? preflightService = null)
+        IAgentPreflightService? preflightService = null,
+        Func<ManualAgentSwitchContext, ManualAgentSwitchInput?>? manualSwitchPrompt = null,
+        Func<string?>? pipelineFolderPrompt = null,
+        Func<string, bool>? pipelineConfirmation = null,
+        Func<PipelineManualActionDialogContext, PipelineManualActionRequest?>? pipelineManualActionPrompt = null,
+        Func<PipelineStartFromPlan, PipelineStartFromDialogResult?>? pipelineStartFromPrompt = null)
     {
         _settingsStore = settingsStore;
         _settings = _settingsStore.Load();
         _manualLimitPrompt = manualLimitPrompt;
+        _manualSwitchPrompt = manualSwitchPrompt;
         _eventSink = new GuiLogger(dispatcher);
         _eventSink.RunEventReceived += OnRunEventReceived;
         _coordinator = new GuiRunCoordinator(
@@ -69,6 +76,13 @@ public sealed class MainWindowViewModel : ViewModelBase
             rateLimitStateStore,
             _effectiveAgentPolicy,
             preflightService);
+        FolderPipeline = new FolderPipelineViewModel(
+            dispatcher,
+            new GuiPipelineCoordinator(dispatcher, rateLimitStateStore),
+            pipelineFolderPrompt,
+            pipelineConfirmation,
+            pipelineManualActionPrompt,
+            pipelineStartFromPrompt);
 
         BrowseCommand = new RelayCommand(Browse, () => !IsRunning);
         ValidateCommand = new AsyncRelayCommand(ValidateAsync, () => !IsRunning && !string.IsNullOrWhiteSpace(PromptFilePath));
@@ -76,6 +90,7 @@ public sealed class MainWindowViewModel : ViewModelBase
             RunAsync,
             () => !IsRunning && _config is not null && _preflightResult?.Succeeded == true);
         CancelCommand = new RelayCommand(Cancel, () => IsRunning);
+        SwitchPendingAgentCommand = new AsyncRelayCommand(SwitchPendingAgentAsync, CanSwitchPendingAgent);
         ClearRecentFilesCommand = new RelayCommand(ClearRecentFiles, () => !IsRunning && RecentPromptFiles.Count > 0);
         RefreshAgentLimitsCommand = new RelayCommand(RefreshAgentLimits, () => !IsRunning);
         SetLimitManuallyCommand = new RelayCommand(SetLimitManually, () => !IsRunning);
@@ -103,6 +118,8 @@ public sealed class MainWindowViewModel : ViewModelBase
 
     public ObservableCollection<string> RecentPromptFiles { get; } = [];
 
+    public FolderPipelineViewModel FolderPipeline { get; }
+
     public GuiSettings CurrentSettings => _settings;
 
     public RelayCommand BrowseCommand { get; }
@@ -112,6 +129,8 @@ public sealed class MainWindowViewModel : ViewModelBase
     public AsyncRelayCommand RunCommand { get; }
 
     public RelayCommand CancelCommand { get; }
+
+    public AsyncRelayCommand SwitchPendingAgentCommand { get; }
 
     public RelayCommand ClearRecentFilesCommand { get; }
 
@@ -130,6 +149,8 @@ public sealed class MainWindowViewModel : ViewModelBase
     public RelayCommand OpenLatestAttemptFolderCommand { get; }
 
     public bool HasRecentFiles => RecentPromptFiles.Count > 0;
+
+    public bool CanSelectAgent => !IsRunning;
 
     public string? SelectedRecentPromptFile
     {
@@ -184,6 +205,11 @@ public sealed class MainWindowViewModel : ViewModelBase
         get => _selectedAgent;
         set
         {
+            if (IsRunning)
+            {
+                return;
+            }
+
             var normalizedSelection = AgentRoutingMode.FromOverride(AgentRoutingMode.ToOverride(value));
             if (!SetProperty(ref _selectedAgent, normalizedSelection))
             {
@@ -340,6 +366,7 @@ public sealed class MainWindowViewModel : ViewModelBase
         {
             if (SetProperty(ref _isRunning, value))
             {
+                OnPropertyChanged(nameof(CanSelectAgent));
                 RaiseCommandStates();
             }
         }
@@ -509,6 +536,11 @@ public sealed class MainWindowViewModel : ViewModelBase
             var info = _coordinator.GetAgentLimit(agentName);
             if (info.IsBlocked && (!info.BlockedUntil.HasValue || info.BlockedUntil.Value > DateTimeOffset.Now))
             {
+                if (_config is not null && _coordinator.HasAvailableConfiguredFallback(_config, agentName))
+                {
+                    continue;
+                }
+
                 message = AgentRateLimitDisplay.BlockedMessage(agentName, info);
                 return true;
             }
@@ -693,32 +725,7 @@ public sealed class MainWindowViewModel : ViewModelBase
                 agentOverride,
                 _preflightResult,
                 _runCancellation.Token);
-            CurrentRunId = result.RunId;
-            if (string.IsNullOrWhiteSpace(RunFolderPath))
-            {
-                RunFolderPath = Path.Combine(result.RepoPath, ".agentbatchrunner", "runs", result.RunId);
-            }
-
-            if (string.IsNullOrWhiteSpace(FinalReportPath))
-            {
-                FinalReportPath = Path.Combine(RunFolderPath, "final-report.md");
-            }
-
-            ReportStatusText = File.Exists(FinalReportPath)
-                ? string.Empty
-                : ReportAvailability.MissingReportMessage;
-            RunStateText = result.FailureKind switch
-            {
-                RunFailureKind.PreflightFailed => "PreflightFailed",
-                RunFailureKind.ToolchainFailure => "ToolchainFailure",
-                _ when result.RateLimited > 0 => "RateLimited",
-                _ => "Completed"
-            };
-            AddLog(
-                result.FailureKind == RunFailureKind.None ? "INFO" : "ERROR",
-                result.FailureKind == RunFailureKind.None
-                    ? "Run completed."
-                    : result.RunFailureReason ?? "Run stopped because an agent toolchain failed.");
+            ApplyRunResult(result);
         }
         catch (OperationCanceledException)
         {
@@ -743,6 +750,183 @@ public sealed class MainWindowViewModel : ViewModelBase
     {
         AddLog("WARN", "Cancellation requested.");
         _runCancellation?.Cancel();
+    }
+
+    private bool CanSwitchPendingAgent()
+    {
+        if (_config is null || _manualSwitchPrompt is null)
+        {
+            return false;
+        }
+
+        var hasSwitchablePrompt = PromptTasks.Any(task => task.Status is "Pending" or "Running" or "RateLimited");
+        return hasSwitchablePrompt && (IsRunning || string.Equals(RunStateText, "RateLimited", StringComparison.OrdinalIgnoreCase));
+    }
+
+    private async Task SwitchPendingAgentAsync()
+    {
+        if (_config is null || _manualSwitchPrompt is null)
+        {
+            return;
+        }
+
+        RefreshAgentLimits();
+        var sourceTasks = PromptTasks
+            .Where(task => task.Status is "Pending" or "Running" or "RateLimited")
+            .ToList();
+        var sourceAgents = sourceTasks
+            .Select(task => task.EffectiveAgent)
+            .Where(agent => !string.IsNullOrWhiteSpace(agent))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        var replacementAgents = new[] { "claude", "codex", "dryrun" }
+            .Where(agent => !_coordinator.GetAgentLimit(agent).IsBlocked)
+            .ToList();
+        if (sourceAgents.Count == 0 || replacementAgents.Count == 0)
+        {
+            AddLog("WARN", "No available pending-agent switch can be made.");
+            return;
+        }
+
+        var rateLimitedTask = sourceTasks.FirstOrDefault(task => task.Status == "RateLimited");
+        var suggestedSource = rateLimitedTask?.EffectiveAgent ??
+                              sourceTasks.FirstOrDefault(task => task.Status == "Running")?.EffectiveAgent ??
+                              sourceAgents[0];
+        var input = _manualSwitchPrompt(new ManualAgentSwitchContext
+        {
+            SourceAgents = sourceAgents,
+            ReplacementAgents = replacementAgents,
+            SuggestedSourceAgent = suggestedSource,
+            PendingPromptCount = sourceTasks.Count(task => task.Status == "Pending"),
+            CanRetryRateLimitedTask = !IsRunning && rateLimitedTask is not null
+        });
+        if (input is null)
+        {
+            return;
+        }
+
+        var affectedPromptIds = PromptTasks
+            .Where(task => task.Status == "Pending" &&
+                           string.Equals(task.EffectiveAgent, input.SourceAgent, StringComparison.OrdinalIgnoreCase))
+            .Select(task => task.Id)
+            .ToList();
+        if (input.RetryRateLimitedTask && rateLimitedTask is not null &&
+            string.Equals(rateLimitedTask.EffectiveAgent, input.SourceAgent, StringComparison.OrdinalIgnoreCase))
+        {
+            affectedPromptIds.Insert(0, rateLimitedTask.Id);
+        }
+
+        if (affectedPromptIds.Count == 0)
+        {
+            AddLog("WARN", "No unstarted prompt currently uses the selected source agent.");
+            return;
+        }
+
+        await _coordinator.QueueSwitchAsync(
+            new AgentSwitchRequest
+            {
+                SourceAgent = input.SourceAgent,
+                ReplacementAgent = input.ReplacementAgent,
+                Reason = AgentRoutingReason.ManualPendingOverride,
+                IsAutomatic = false,
+                StartingPromptId = affectedPromptIds[0],
+                AffectedPromptIds = affectedPromptIds,
+                UserConfirmed = true,
+                RetryRateLimitedTask = input.RetryRateLimitedTask
+            },
+            CancellationToken.None);
+
+        if (_coordinator.IsExecuting)
+        {
+            return;
+        }
+
+        IsRunning = true;
+        RunStateText = "Running";
+        _runCancellation = new CancellationTokenSource();
+        try
+        {
+            var result = await _coordinator.ContinueAsync(
+                input.RetryRateLimitedTask,
+                _runCancellation.Token);
+            ApplyRunResult(result);
+        }
+        catch (OperationCanceledException)
+        {
+            RunStateText = "Canceled";
+            MarkActiveTasksCanceled();
+            AddLog("WARN", "Run continuation canceled. No git reset/delete/force-push was performed.");
+        }
+        catch (Exception ex)
+        {
+            RunStateText = "Failed";
+            AddLog("ERROR", ex.Message);
+        }
+        finally
+        {
+            _runCancellation?.Dispose();
+            _runCancellation = null;
+            IsRunning = false;
+        }
+    }
+
+    private void ApplyRunResult(RunResult result)
+    {
+        CurrentRunId = result.RunId;
+        RunFolderPath = Path.Combine(result.RepoPath, ".agentbatchrunner", "runs", result.RunId);
+        FinalReportPath = Path.Combine(RunFolderPath, "final-report.md");
+        ReportStatusText = File.Exists(FinalReportPath)
+            ? string.Empty
+            : ReportAvailability.MissingReportMessage;
+        RunStateText = result.FailureKind switch
+        {
+            RunFailureKind.PreflightFailed => "PreflightFailed",
+            RunFailureKind.ToolchainFailure => "ToolchainFailure",
+            _ when result.RateLimited > 0 => "RateLimited",
+            _ => "Completed"
+        };
+
+        foreach (var taskResult in result.Tasks)
+        {
+            var task = PromptTasks.FirstOrDefault(item =>
+                string.Equals(item.Id, taskResult.Id, StringComparison.OrdinalIgnoreCase));
+            if (task is null)
+            {
+                continue;
+            }
+
+            task.BaseAgent = string.IsNullOrWhiteSpace(taskResult.BaseAgent) ? task.BaseAgent : taskResult.BaseAgent;
+            task.EffectiveAgent = string.IsNullOrWhiteSpace(taskResult.EffectiveAgent)
+                ? taskResult.Agent
+                : taskResult.EffectiveAgent;
+            task.RoutingReason = taskResult.RoutingReason.ToString();
+            task.LatestAttemptAgent = taskResult.LatestAttemptAgent ?? task.LatestAttemptAgent;
+            task.Status = taskResult.Status.ToString();
+            task.TaskOutputFolder = taskResult.TaskDirectory;
+            task.StartedAt = taskResult.StartedAt;
+            task.CompletedAt = taskResult.CompletedAt;
+            task.LastFailureReason = taskResult.LastFailureReason ?? string.Empty;
+            task.AgentOutcomeText = taskResult.AgentOutcome?.AgentOutcome.ToString() ?? string.Empty;
+            task.BlockerCode = taskResult.AgentOutcome?.BlockerCode ?? string.Empty;
+            task.RecommendedNextFile = taskResult.RecommendedNextFile ?? string.Empty;
+            var latestAttempt = taskResult.Attempts.OrderByDescending(attempt => attempt.AttemptNumber).FirstOrDefault();
+            if (latestAttempt is not null)
+            {
+                PromptTaskDiagnosticsMapper.ApplyAttemptResult(
+                    task,
+                    latestAttempt,
+                    task.EffectiveAgent,
+                    result.RepoPath,
+                    taskResult.LastFailedVerificationCommand,
+                    taskResult.LastFailureReason);
+            }
+        }
+
+        AddLog(
+            result.FailureKind == RunFailureKind.None ? "INFO" : "ERROR",
+            result.FailureKind == RunFailureKind.None
+                ? result.RateLimited > 0 ? "Run stopped because an agent is rate-limited." : "Run completed."
+                : result.RunFailureReason ?? "Run stopped because an agent toolchain failed.");
     }
 
     private void ApplyConfig(BatchConfig config)
@@ -770,7 +954,9 @@ public sealed class MainWindowViewModel : ViewModelBase
                 Id = prompt.Id,
                 Title = prompt.Title,
                 PromptText = prompt.Prompt,
-                Agent = selections[prompt.Id].EffectiveAgent,
+                BaseAgent = selections[prompt.Id].BaseAgent,
+                EffectiveAgent = selections[prompt.Id].EffectiveAgent,
+                RoutingReason = selections[prompt.Id].BaseRoutingReason.ToString(),
                 MaxAttempts = prompt.MaxRetries ?? config.DefaultMaxRetries,
                 Status = "Pending",
                 LastMessage = "Waiting to run.",
@@ -835,6 +1021,16 @@ public sealed class MainWindowViewModel : ViewModelBase
             case RunEventKind.AgentPreflightSucceeded:
                 PreflightStateText = "Ready";
                 break;
+            case RunEventKind.FallbackPreflightStarted:
+                PreflightStateText = $"Checking fallback agent {runEvent.Agent}...";
+                break;
+            case RunEventKind.FallbackPreflightPassed:
+                PreflightStateText = "Ready";
+                break;
+            case RunEventKind.FallbackPreflightFailed:
+                PreflightStateText = runEvent.FailureReason ?? runEvent.Message;
+                RunStateText = "PreflightFailed";
+                break;
             case RunEventKind.PreflightFailed:
                 PreflightStateText = runEvent.FailureReason ?? runEvent.Message;
                 RunStateText = "PreflightFailed";
@@ -858,6 +1054,12 @@ public sealed class MainWindowViewModel : ViewModelBase
                 RunStateText = "Canceled";
                 MarkActiveTasksCanceled();
                 break;
+            case RunEventKind.AgentSwitchApplied:
+                ApplyRoutingChangeToRows(runEvent);
+                break;
+            case RunEventKind.AgentSwitchQueued:
+            case RunEventKind.RateLimitFallbackSelected:
+                break;
             case RunEventKind.TaskPending:
             case RunEventKind.TaskStarted:
             case RunEventKind.AttemptStarted:
@@ -873,6 +1075,8 @@ public sealed class MainWindowViewModel : ViewModelBase
             case RunEventKind.VerificationFailed:
             case RunEventKind.VerificationTimedOut:
             case RunEventKind.RetryStarted:
+            case RunEventKind.PendingPromptRerouted:
+            case RunEventKind.RateLimitedTaskContinuing:
             case RunEventKind.TaskSucceeded:
             case RunEventKind.TaskFailed:
             case RunEventKind.TaskRateLimited:
@@ -892,7 +1096,8 @@ public sealed class MainWindowViewModel : ViewModelBase
 
         var task = GetOrCreateTask(runEvent);
         PromptTaskDiagnosticsMapper.ApplyRunEvent(task, runEvent);
-        task.Agent = runEvent.Agent ?? task.Agent;
+        task.EffectiveAgent = runEvent.EffectiveAgent ?? runEvent.Agent ?? task.EffectiveAgent;
+        task.LatestAttemptAgent = runEvent.AttemptAgent ?? task.LatestAttemptAgent;
         task.LastMessage = runEvent.Message;
         if (runEvent.MaxAttempts.HasValue)
         {
@@ -968,6 +1173,16 @@ public sealed class MainWindowViewModel : ViewModelBase
             case RunEventKind.RetryStarted:
                 task.Status = "Running";
                 break;
+            case RunEventKind.PendingPromptRerouted:
+                if (task.Status is "Pending" or "RateLimited")
+                {
+                    task.Status = "Pending";
+                }
+                break;
+            case RunEventKind.RateLimitedTaskContinuing:
+                task.Status = "Running";
+                task.CompletedAt = null;
+                break;
             case RunEventKind.TaskSucceeded:
                 task.Status = runEvent.Status?.ToString() ?? "Succeeded";
                 task.CompletedAt = runEvent.Timestamp;
@@ -1014,12 +1229,21 @@ public sealed class MainWindowViewModel : ViewModelBase
         {
             Id = runEvent.PromptId ?? string.Empty,
             Title = runEvent.Title ?? string.Empty,
-            Agent = runEvent.Agent ?? AgentRoutingMode.ToOverride(SelectedAgent) ?? string.Empty,
+            BaseAgent = runEvent.BaseAgent ?? runEvent.Agent ?? AgentRoutingMode.ToOverride(SelectedAgent) ?? string.Empty,
+            EffectiveAgent = runEvent.EffectiveAgent ?? runEvent.Agent ?? AgentRoutingMode.ToOverride(SelectedAgent) ?? string.Empty,
+            LatestAttemptAgent = runEvent.AttemptAgent ?? string.Empty,
+            RoutingReason = runEvent.RoutingReason?.ToString() ?? string.Empty,
             MaxAttempts = runEvent.MaxAttempts ?? 0,
             Status = "Pending"
         };
         PromptTasks.Add(created);
         return created;
+    }
+
+    private void ApplyRoutingChangeToRows(RunEvent runEvent)
+    {
+        GuiRoutingChangeMapper.Apply(PromptTasks, runEvent);
+        RaiseCommandStates();
     }
 
     private void MarkActiveTasksCanceled()
@@ -1086,7 +1310,7 @@ public sealed class MainWindowViewModel : ViewModelBase
                 RunEventKind.RunToolchainFailed => "ERROR",
             RunEventKind.AgentTimedOut or RunEventKind.AgentRateLimited or RunEventKind.VerificationTimedOut or
                 RunEventKind.RetryStarted or RunEventKind.RunCanceled or RunEventKind.TaskRateLimited or
-                RunEventKind.RunRateLimited => "WARN",
+                RunEventKind.RunRateLimited or RunEventKind.FallbackPreflightFailed => "WARN",
             _ => "INFO"
         };
     }
@@ -1137,6 +1361,7 @@ public sealed class MainWindowViewModel : ViewModelBase
         ValidateCommand.RaiseCanExecuteChanged();
         RunCommand.RaiseCanExecuteChanged();
         CancelCommand.RaiseCanExecuteChanged();
+        SwitchPendingAgentCommand.RaiseCanExecuteChanged();
         ClearRecentFilesCommand.RaiseCanExecuteChanged();
         RefreshAgentLimitsCommand.RaiseCanExecuteChanged();
         SetLimitManuallyCommand.RaiseCanExecuteChanged();

@@ -2,7 +2,12 @@ using AgentBatchRunner.Infrastructure;
 
 namespace AgentBatchRunner.Agents;
 
-public class AgentAdapterFactory(ProcessRunner processRunner, ConsoleLogger logger)
+public interface IAgentAdapterProvider
+{
+    IAgentAdapter Create(string agent);
+}
+
+public class AgentAdapterFactory(ProcessRunner processRunner, ConsoleLogger logger) : IAgentAdapterProvider
 {
     private static readonly HashSet<string> SupportedAgents = new(StringComparer.OrdinalIgnoreCase)
     {

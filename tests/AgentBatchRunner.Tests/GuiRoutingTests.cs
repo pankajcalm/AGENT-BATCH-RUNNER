@@ -92,6 +92,90 @@ public sealed class GuiRoutingTests
         Assert.False(viewModel.RunCommand.CanExecute(null));
     }
 
+    [Fact]
+    public void RoutingChangeMapper_UpdatesPendingRowsAndLeavesCompletedRowsUnchanged()
+    {
+        var completed = new PromptTaskViewModel
+        {
+            Id = "P001",
+            BaseAgent = "claude",
+            EffectiveAgent = "claude",
+            RoutingReason = "Yaml",
+            Status = "Succeeded"
+        };
+        var pending = new PromptTaskViewModel
+        {
+            Id = "P002",
+            BaseAgent = "claude",
+            EffectiveAgent = "claude",
+            RoutingReason = "Yaml",
+            Status = "Pending"
+        };
+
+        GuiRoutingChangeMapper.Apply(
+            [completed, pending],
+            new RunEvent
+            {
+                Kind = RunEventKind.AgentSwitchApplied,
+                SourceAgent = "claude",
+                ReplacementAgent = "codex",
+                EffectiveAgent = "codex",
+                RoutingReason = AgentRoutingReason.ManualPendingOverride,
+                AffectedPromptIds = ["P001", "P002"]
+            });
+
+        Assert.Equal("claude", completed.EffectiveAgent);
+        Assert.Equal("codex", pending.EffectiveAgent);
+        Assert.Equal("ManualPendingOverride", pending.RoutingReason);
+    }
+
+    [Fact]
+    public void GlobalAgentSelector_CannotChangeWhileRunIsActive()
+    {
+        using var temp = TestWorkspace.Create();
+        var viewModel = CreateViewModel(
+            temp.Root,
+            new RecordingPreflightService(new AgentPreflightResult { Succeeded = true }));
+        viewModel.SelectedAgent = "claude";
+
+        viewModel.IsRunning = true;
+        viewModel.SelectedAgent = "codex";
+
+        Assert.Equal("Global override: claude", viewModel.SelectedAgent);
+        Assert.False(viewModel.CanSelectAgent);
+    }
+
+    [Fact]
+    public async Task Validate_AutoFallback_PreflightsFallbackNotUsedByBaseRouting()
+    {
+        using var repo = TestWorkspace.CreateGitRepository();
+        using var temp = TestWorkspace.Create();
+        var yamlPath = Path.Combine(temp.Root, "fallback.yaml");
+        Utf8File.WriteAllText(
+            yamlPath,
+            $$"""
+            project: Fallback routing
+            repoPath: '{{repo.Root}}'
+            defaultAgent: claude
+            autoSwitchOnRateLimit: true
+            rateLimitFallbacks:
+              claude:
+                - codex
+            prompts:
+              - id: P001
+                title: Claude task
+                prompt: First task.
+                verify: []
+            """);
+        var preflight = new RecordingPreflightService(new AgentPreflightResult { Succeeded = true });
+        var viewModel = CreateViewModel(temp.Root, preflight);
+        viewModel.PromptFilePath = yamlPath;
+
+        await viewModel.ValidatePromptFileAsync();
+
+        Assert.Equal(["claude", "codex"], Assert.Single(preflight.AgentSets));
+    }
+
     private static MainWindowViewModel CreateViewModel(string root, IAgentPreflightService preflightService)
     {
         return new MainWindowViewModel(

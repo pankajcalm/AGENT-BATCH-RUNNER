@@ -1,9 +1,41 @@
+pipeline:
+  id: SAMPLE-PHASE-10
+  title: Sample repository build phase
+  phase: PHASE-1
+  order: 10
+  enabled: true
+  dependsOn: []
+  gate:
+    id: G1
+    requiredForNextPhase: false
+    criteria:
+      - Build verification passes.
+  review:
+    # Set required to true and choose claude/codex for a machine-readable gate review.
+    # dryrun does not fabricate an approval verdict.
+    required: false
+    agent: dryrun
+    independentAgentPreferred: false
+    autoGenerate: true
+  next:
+    onApproved: manual
+    onApprovedWithWarnings: manual
+    onBlocked: stop
+    onNeedsHumanDecision: stop
+
 project: AgentBatchRunner.Sample
 repoPath: C:\TEMP\SomeRepository
 defaultAgent: dryrun
 defaultMaxRetries: 3
 defaultAgentTimeoutSeconds: 1800
 defaultVerifyTimeoutSeconds: 900
+autoSwitchOnRateLimit: false
+maxRateLimitAgentSwitchesPerTask: 1
+# Provider switching can affect privacy, cost, and behavior. Set the option above
+# to true only after reviewing both providers.
+rateLimitFallbacks:
+  claude:
+    - codex
 minimumCodexVersion: 0.144.5
 # Optional absolute paths. Configuration overrides environment variables,
 # the native Windows Codex installation, and PATH discovery.

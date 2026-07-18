@@ -3,6 +3,9 @@ namespace AgentBatchRunner.Gui.ViewModels;
 public sealed class PromptTaskViewModel : ViewModelBase
 {
     private string _agent = string.Empty;
+    private string _baseAgent = string.Empty;
+    private string _routingReason = string.Empty;
+    private string _latestAttemptAgent = string.Empty;
     private int _currentAttempt;
     private int _maxAttempts;
     private string _status = "Pending";
@@ -27,6 +30,9 @@ public sealed class PromptTaskViewModel : ViewModelBase
     private string _agentOutputFilePath = string.Empty;
     private string _verificationLogPath = string.Empty;
     private string _latestAttemptFolder = string.Empty;
+    private string _agentOutcomeText = string.Empty;
+    private string _blockerCode = string.Empty;
+    private string _recommendedNextFile = string.Empty;
 
     public string Id { get; init; } = string.Empty;
 
@@ -37,7 +43,37 @@ public sealed class PromptTaskViewModel : ViewModelBase
     public string Agent
     {
         get => _agent;
-        set => SetProperty(ref _agent, value);
+        set
+        {
+            if (SetProperty(ref _agent, value))
+            {
+                OnPropertyChanged(nameof(EffectiveAgent));
+            }
+        }
+    }
+
+    public string BaseAgent
+    {
+        get => _baseAgent;
+        set => SetProperty(ref _baseAgent, value);
+    }
+
+    public string EffectiveAgent
+    {
+        get => Agent;
+        set => Agent = value;
+    }
+
+    public string RoutingReason
+    {
+        get => _routingReason;
+        set => SetProperty(ref _routingReason, value);
+    }
+
+    public string LatestAttemptAgent
+    {
+        get => _latestAttemptAgent;
+        set => SetProperty(ref _latestAttemptAgent, value);
     }
 
     public int CurrentAttempt
@@ -203,6 +239,24 @@ public sealed class PromptTaskViewModel : ViewModelBase
     {
         get => _latestAttemptFolder;
         set => SetProperty(ref _latestAttemptFolder, value);
+    }
+
+    public string AgentOutcomeText
+    {
+        get => _agentOutcomeText;
+        set => SetProperty(ref _agentOutcomeText, value);
+    }
+
+    public string BlockerCode
+    {
+        get => _blockerCode;
+        set => SetProperty(ref _blockerCode, value);
+    }
+
+    public string RecommendedNextFile
+    {
+        get => _recommendedNextFile;
+        set => SetProperty(ref _recommendedNextFile, value);
     }
 
     public string FailedCommand

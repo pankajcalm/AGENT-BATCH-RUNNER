@@ -12,7 +12,7 @@ public sealed class ClaudeCodeAdapter(ProcessRunner processRunner, ConsoleLogger
         AgentExecutionRequest request,
         CancellationToken cancellationToken)
     {
-        if (request.AttemptNumber > 1 && string.IsNullOrWhiteSpace(request.SessionId))
+        if (request.ShouldResumeSession && string.IsNullOrWhiteSpace(request.SessionId))
         {
             logger.Warning("Claude retry requested but no session_id was captured; starting a fresh Claude session.");
         }
@@ -47,7 +47,7 @@ public sealed class ClaudeCodeAdapter(ProcessRunner processRunner, ConsoleLogger
     public static List<string> BuildArguments(AgentExecutionRequest request)
     {
         var arguments = new List<string>();
-        if (request.AttemptNumber > 1 && !string.IsNullOrWhiteSpace(request.SessionId))
+        if (request.ShouldResumeSession && !string.IsNullOrWhiteSpace(request.SessionId))
         {
             arguments.Add("--resume");
             arguments.Add(request.SessionId);

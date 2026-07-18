@@ -9,15 +9,19 @@ namespace AgentBatchRunner.Services;
 public sealed class PromptFileLoader
 {
     private readonly EffectiveAgentPolicy _effectiveAgentPolicy;
+    private readonly RateLimitFallbackPolicy _fallbackPolicy;
 
     private readonly IDeserializer _deserializer = new DeserializerBuilder()
         .WithNamingConvention(CamelCaseNamingConvention.Instance)
         .IgnoreUnmatchedProperties()
         .Build();
 
-    public PromptFileLoader(EffectiveAgentPolicy? effectiveAgentPolicy = null)
+    public PromptFileLoader(
+        EffectiveAgentPolicy? effectiveAgentPolicy = null,
+        RateLimitFallbackPolicy? fallbackPolicy = null)
     {
         _effectiveAgentPolicy = effectiveAgentPolicy ?? new EffectiveAgentPolicy();
+        _fallbackPolicy = fallbackPolicy ?? new RateLimitFallbackPolicy();
     }
 
     public async Task<BatchConfig> LoadAsync(string yamlPath, CancellationToken cancellationToken = default)
@@ -84,6 +88,17 @@ public sealed class PromptFileLoader
         if (config.DefaultVerifyTimeoutSeconds < 1)
         {
             result.Errors.Add("defaultVerifyTimeoutSeconds must be 1 or greater.");
+        }
+
+        if (config.MaxRateLimitAgentSwitchesPerTask < 0 ||
+            (config.AutoSwitchOnRateLimit && config.MaxRateLimitAgentSwitchesPerTask < 1))
+        {
+            result.Errors.Add("maxRateLimitAgentSwitchesPerTask must be 1 or greater when autoSwitchOnRateLimit is enabled.");
+        }
+
+        foreach (var fallbackError in _fallbackPolicy.Validate(config))
+        {
+            result.Errors.Add(fallbackError);
         }
 
         if (config.DefaultCommandTimeoutSeconds < 0)

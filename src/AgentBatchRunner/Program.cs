@@ -36,6 +36,32 @@ public static class Program
             rateLimitStateStore: rateLimitStateStore,
             effectiveAgentPolicy: effectiveAgentPolicy,
             agentPreflightService: preflightService);
+        var pipelineStateStore = new PipelineStateStore();
+        var pipelineReportGenerator = new PipelineReportGenerator(pipelineStateStore);
+        var pipelineReviewRunner = new PipelineReviewRunner(
+            loader,
+            agentFactory,
+            preflightService,
+            verificationRunner,
+            processRunner,
+            stateStore,
+            new PipelineReviewResultParser(),
+            new PipelineReviewReportGenerator(stateStore),
+            rateLimitDetector,
+            rateLimitStateStore);
+        var pipelineRunner = new PipelineFolderRunner(
+            new PipelineFolderDiscovery(loader),
+            new PipelinePlanBuilder(),
+            loader,
+            batchRunner,
+            stateStore,
+            new PipelineReviewYamlGenerator(),
+            pipelineReviewRunner,
+            new NextPipelineFileSelector(),
+            pipelineStateStore,
+            pipelineReportGenerator,
+            effectiveAgentPolicy,
+            rateLimitStateStore);
 
         var app = new CommandLineApp(
             loader,
@@ -44,7 +70,10 @@ public static class Program
             reportGenerator,
             rateLimitStateStore,
             logger,
-            effectiveAgentPolicy: effectiveAgentPolicy);
+            effectiveAgentPolicy: effectiveAgentPolicy,
+            pipelineRunner: pipelineRunner,
+            pipelineStateStore: pipelineStateStore,
+            pipelineReportGenerator: pipelineReportGenerator);
         return await app.RunAsync(args, CancellationToken.None);
     }
 }

@@ -9,7 +9,9 @@
         MinWidth="1120"
         Height="820"
         Width="1280">
-    <Grid Margin="12">
+    <TabControl>
+      <TabItem Header="Batch File">
+        <Grid Margin="12">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
             <RowDefinition Height="Auto" />
@@ -20,6 +22,7 @@
 
         <Grid Grid.Row="0">
             <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
                 <RowDefinition Height="Auto" />
                 <RowDefinition Height="Auto" />
                 <RowDefinition Height="Auto" />
@@ -39,7 +42,7 @@
             <Button Grid.Column="2" Width="88" Margin="0,0,8,0" Command="{Binding BrowseCommand}" Content="Browse" />
             <Button Grid.Column="3" Width="88" Margin="0,0,16,0" Command="{Binding ValidateCommand}" Content="Validate" />
             <TextBlock Grid.Column="4" Margin="0,0,8,0" VerticalAlignment="Center" FontWeight="SemiBold" Text="Agent" />
-            <ComboBox Grid.Column="5" Width="220" Margin="0,0,8,0" ItemsSource="{Binding AgentOptions}" SelectedItem="{Binding SelectedAgent, Mode=TwoWay}" />
+            <ComboBox Grid.Column="5" Width="220" Margin="0,0,8,0" IsEnabled="{Binding CanSelectAgent}" ItemsSource="{Binding AgentOptions}" SelectedItem="{Binding SelectedAgent, Mode=TwoWay}" />
             <StackPanel Grid.Column="6" Orientation="Horizontal">
                 <Button Width="88" Margin="0,0,8,0" Command="{Binding RunCommand}" Content="Run" />
                 <Button Width="88" Command="{Binding CancelCommand}" Content="Cancel" />
@@ -56,7 +59,7 @@
             <Button Grid.Row="1" Grid.Column="6" Width="110" Margin="0,8,0,0" Command="{Binding ClearRecentFilesCommand}" Content="Clear Recent" />
 
             <TextBlock Grid.Row="2" Grid.Column="0" Margin="0,8,8,0" VerticalAlignment="Center" FontWeight="SemiBold" Text="Limits" />
-            <StackPanel Grid.Row="2" Grid.Column="1" Grid.ColumnSpan="6" Margin="0,8,0,0" Orientation="Horizontal">
+            <WrapPanel Grid.Row="2" Grid.Column="1" Grid.ColumnSpan="6" Margin="0,8,0,0" Orientation="Horizontal">
                 <TextBlock MinWidth="130" Margin="0,0,16,0" VerticalAlignment="Center" Text="{Binding DryRunAvailabilityText}" />
                 <TextBlock MinWidth="210" Margin="0,0,16,0" VerticalAlignment="Center" Text="{Binding ClaudeAvailabilityText}" />
                 <TextBlock MinWidth="210" Margin="0,0,16,0" VerticalAlignment="Center" Text="{Binding CodexAvailabilityText}" />
@@ -64,7 +67,14 @@
                 <Button Width="132" Margin="0,0,8,0" Command="{Binding RefreshAgentLimitsCommand}" Content="Refresh Agent Limits" />
                 <Button Width="150" Margin="0,0,8,0" Command="{Binding SetLimitManuallyCommand}" Content="Set Agent Limit Manually" />
                 <Button Width="132" Command="{Binding ClearLimitManuallyCommand}" Content="Clear Limit Manually" />
-            </StackPanel>
+            </WrapPanel>
+
+            <TextBlock Grid.Row="3" Grid.Column="0" Margin="0,8,8,0" VerticalAlignment="Center" FontWeight="SemiBold" Text="Run routing" />
+            <Button Grid.Row="3" Grid.Column="1" Width="150" Margin="0,8,0,0"
+                    HorizontalAlignment="Left"
+                    Command="{Binding SwitchPendingAgentCommand}"
+                    Content="Switch Pending Agent"
+                    ToolTip="Reroute prompts that have not started" />
         </Grid>
 
         <Border Grid.Row="1" Margin="0,12,0,12" Padding="10" BorderBrush="#D0D7DE" BorderThickness="1" CornerRadius="6">
@@ -161,14 +171,17 @@
                 </Style>
             </DataGrid.RowStyle>
             <DataGrid.Columns>
-                <DataGridTextColumn Width="90" Binding="{Binding Id}" Header="ID" />
-                <DataGridTextColumn Width="2*" Binding="{Binding Title}" Header="Title" />
-                <DataGridTextColumn Width="110" Binding="{Binding Agent}" Header="Effective agent" />
-                <DataGridTextColumn Width="90" Binding="{Binding CurrentAttempt}" Header="Attempt" />
-                <DataGridTextColumn Width="90" Binding="{Binding MaxAttempts}" Header="Max" />
-                <DataGridTextColumn Width="140" Binding="{Binding Status}" Header="Status" />
-                <DataGridTextColumn Width="3*" Binding="{Binding LastMessage}" Header="Last message" />
-                <DataGridTextColumn Width="110" Binding="{Binding DurationText}" Header="Duration" />
+                <DataGridTextColumn Width="80" Binding="{Binding Id}" Header="ID" />
+                <DataGridTextColumn Width="220" Binding="{Binding Title}" Header="Title" />
+                <DataGridTextColumn Width="95" Binding="{Binding BaseAgent}" Header="Base agent" />
+                <DataGridTextColumn Width="105" Binding="{Binding EffectiveAgent}" Header="Effective agent" />
+                <DataGridTextColumn Width="150" Binding="{Binding RoutingReason}" Header="Routing reason" />
+                <DataGridTextColumn Width="105" Binding="{Binding LatestAttemptAgent}" Header="Attempt agent" />
+                <DataGridTextColumn Width="80" Binding="{Binding CurrentAttempt}" Header="Attempt" />
+                <DataGridTextColumn Width="70" Binding="{Binding MaxAttempts}" Header="Max" />
+                <DataGridTextColumn Width="130" Binding="{Binding Status}" Header="Status" />
+                <DataGridTextColumn Width="300" Binding="{Binding LastMessage}" Header="Last message" />
+                <DataGridTextColumn Width="90" Binding="{Binding DurationText}" Header="Duration" />
             </DataGrid.Columns>
         </DataGrid>
 
@@ -214,11 +227,13 @@
                             <RowDefinition Height="Auto" />
                             <RowDefinition Height="Auto" />
                             <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
                         </Grid.RowDefinitions>
                         <TextBlock Grid.Row="0" Grid.Column="0" Margin="0,0,8,4" FontWeight="SemiBold" Text="Output folder" />
                         <TextBlock Grid.Row="0" Grid.Column="1" Grid.ColumnSpan="3" Margin="0,0,0,4" Text="{Binding SelectedTask.TaskOutputFolder}" TextTrimming="CharacterEllipsis" />
-                        <TextBlock Grid.Row="1" Grid.Column="0" Margin="0,0,8,4" FontWeight="SemiBold" Text="Agent" />
-                        <TextBlock Grid.Row="1" Grid.Column="1" Margin="0,0,16,4" Text="{Binding SelectedTask.Agent}" />
+                        <TextBlock Grid.Row="1" Grid.Column="0" Margin="0,0,8,4" FontWeight="SemiBold" Text="Attempt agent" />
+                        <TextBlock Grid.Row="1" Grid.Column="1" Margin="0,0,16,4" Text="{Binding SelectedTask.LatestAttemptAgent}" />
                         <TextBlock Grid.Row="1" Grid.Column="2" Margin="0,0,8,4" FontWeight="SemiBold" Text="Exit code" />
                         <TextBlock Grid.Row="1" Grid.Column="3" Margin="0,0,0,4" Text="{Binding SelectedTask.ExitCodeText}" />
                         <TextBlock Grid.Row="2" Grid.Column="0" Margin="0,0,8,4" FontWeight="SemiBold" Text="Command" />
@@ -244,6 +259,12 @@
                             <Run Text="verify: " />
                             <Run Text="{Binding SelectedTask.VerificationLogPath}" />
                         </TextBlock>
+                        <TextBlock Grid.Row="8" Grid.Column="0" Margin="0,4,8,4" FontWeight="SemiBold" Text="Agent outcome" />
+                        <TextBlock Grid.Row="8" Grid.Column="1" Margin="0,4,16,4" Text="{Binding SelectedTask.AgentOutcomeText}" />
+                        <TextBlock Grid.Row="8" Grid.Column="2" Margin="0,4,8,4" FontWeight="SemiBold" Text="Blocker code" />
+                        <TextBlock Grid.Row="8" Grid.Column="3" Margin="0,4,0,4" Text="{Binding SelectedTask.BlockerCode}" />
+                        <TextBlock Grid.Row="9" Grid.Column="0" Margin="0,0,8,0" FontWeight="SemiBold" Text="Recommended next" />
+                        <TextBlock Grid.Row="9" Grid.Column="1" Grid.ColumnSpan="3" Text="{Binding SelectedTask.RecommendedNextFile}" TextWrapping="Wrap" />
                     </Grid>
 
                     <GroupBox Grid.Row="1" Margin="0,0,0,8" Header="Prompt">
@@ -286,5 +307,232 @@
                 <TextBlock Foreground="#8A5A00" Text="{Binding ReportStatusText}" TextWrapping="Wrap" />
             </StackPanel>
         </DockPanel>
-    </Grid>
+        </Grid>
+      </TabItem>
+
+      <TabItem Header="Folder Pipeline">
+        <Grid Margin="12" DataContext="{Binding FolderPipeline}">
+          <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="3*" />
+            <RowDefinition Height="2*" />
+            <RowDefinition Height="Auto" />
+          </Grid.RowDefinitions>
+
+          <Grid Grid.Row="0">
+            <Grid.RowDefinitions>
+              <RowDefinition Height="Auto" />
+              <RowDefinition Height="Auto" />
+              <RowDefinition Height="Auto" />
+            </Grid.RowDefinitions>
+            <Grid.ColumnDefinitions>
+              <ColumnDefinition Width="Auto" />
+              <ColumnDefinition Width="*" />
+              <ColumnDefinition Width="Auto" />
+              <ColumnDefinition Width="Auto" />
+              <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+
+            <TextBlock Grid.Row="0" Grid.Column="0" Margin="0,0,8,0" VerticalAlignment="Center" FontWeight="SemiBold" Text="Pipeline folder" />
+            <TextBox Grid.Row="0" Grid.Column="1" MinWidth="360" Margin="0,0,8,0" IsReadOnly="True" Text="{Binding FolderPath}" />
+            <Button Grid.Row="0" Grid.Column="2" Width="96" Margin="0,0,8,0" Command="{Binding SelectFolderCommand}" Content="Select Folder" />
+            <Button Grid.Row="0" Grid.Column="3" Width="88" Margin="0,0,8,0" Command="{Binding ScanFolderCommand}" Content="Scan Folder" />
+            <Button Grid.Row="0" Grid.Column="4" Width="100" Command="{Binding RefreshQueueCommand}" Content="Refresh Queue" />
+
+            <WrapPanel Grid.Row="1" Grid.Column="0" Grid.ColumnSpan="5" Margin="0,8,0,0" Orientation="Horizontal">
+              <TextBlock Margin="0,0,8,0" VerticalAlignment="Center" FontWeight="SemiBold" Text="Mode" />
+              <ComboBox Width="140" Margin="0,0,16,0" ItemsSource="{Binding Modes}" SelectedItem="{Binding SelectedMode}" />
+              <TextBlock Margin="0,0,8,0" VerticalAlignment="Center" FontWeight="SemiBold" Text="Execution routing" />
+              <ComboBox Width="190" Margin="0,0,16,0" ItemsSource="{Binding AgentOptions}" SelectedItem="{Binding SelectedExecutionAgent}" />
+              <TextBlock Margin="0,0,8,0" VerticalAlignment="Center" FontWeight="SemiBold" Text="Review routing" />
+              <ComboBox Width="190" ItemsSource="{Binding AgentOptions}" SelectedItem="{Binding SelectedReviewAgent}" />
+            </WrapPanel>
+
+            <WrapPanel Grid.Row="2" Grid.Column="0" Grid.ColumnSpan="5" Margin="0,8,0,0" Orientation="Horizontal">
+              <Button Width="100" Margin="0,0,8,0" Command="{Binding RunSelectedCommand}" Content="Run Selected" />
+              <Button Width="150" Margin="0,0,8,0" Command="{Binding RunRecommendedNextCommand}" Content="Run Recommended Next" />
+              <Button Width="98" Margin="0,0,8,0" Command="{Binding ApproveNextCommand}" Content="Approve Next" />
+              <Button Width="96" Margin="0,0,8,0" Command="{Binding RunPipelineCommand}" Content="Run Pipeline" />
+              <Button Width="142" Margin="0,0,8,0" Command="{Binding PausePipelineCommand}" Content="Pause After Current" />
+              <Button Width="102" Margin="0,0,8,0" Command="{Binding StopPipelineCommand}" Content="Stop Pipeline" />
+              <Button Width="112" Margin="0,0,8,0" Command="{Binding ResumePipelineCommand}" Content="Resume Latest" />
+              <Button Width="104" Margin="0,0,8,0" Command="{Binding SkipSelectedCommand}" Content="Skip Selected" />
+              <Button Width="176" Margin="0,0,8,0" Command="{Binding MarkCompletedManuallyCommand}" Content="Mark Completed Manually" />
+              <Button Width="132" Margin="0,0,8,0" Command="{Binding StartFromSelectedCommand}" Content="Start From Selected" />
+              <Button Width="130" Command="{Binding UndoManualStatusCommand}" Content="Undo Manual Status" />
+            </WrapPanel>
+          </Grid>
+
+          <Border Grid.Row="1" Margin="0,12,0,12" Padding="10" BorderBrush="#D0D7DE" BorderThickness="1" CornerRadius="6">
+            <Grid>
+              <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="2*" />
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="*" />
+              </Grid.ColumnDefinitions>
+              <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+              </Grid.RowDefinitions>
+              <TextBlock Grid.Row="0" Grid.Column="0" Margin="0,0,8,5" FontWeight="SemiBold" Text="Repository" />
+              <TextBlock Grid.Row="0" Grid.Column="1" Margin="0,0,18,5" Text="{Binding RepoPath}" TextTrimming="CharacterEllipsis" />
+              <TextBlock Grid.Row="0" Grid.Column="2" Margin="0,0,8,5" FontWeight="SemiBold" Text="Pipeline run ID" />
+              <TextBlock Grid.Row="0" Grid.Column="3" Margin="0,0,18,5" Text="{Binding PipelineRunId}" />
+              <TextBlock Grid.Row="0" Grid.Column="4" Margin="0,0,8,5" FontWeight="SemiBold" Text="State" />
+              <TextBlock Grid.Row="0" Grid.Column="5" Margin="0,0,0,5" Text="{Binding PipelineStateText}" />
+              <TextBlock Grid.Row="1" Grid.Column="0" Margin="0,0,8,0" FontWeight="SemiBold" Text="Last message" />
+              <TextBlock Grid.Row="1" Grid.Column="1" Grid.ColumnSpan="5" Text="{Binding LastMessage}" TextWrapping="Wrap" />
+            </Grid>
+          </Border>
+
+          <DataGrid Grid.Row="2"
+                    AutoGenerateColumns="False"
+                    CanUserAddRows="False"
+                    CanUserDeleteRows="False"
+                    IsReadOnly="True"
+                    ItemsSource="{Binding Files}"
+                    SelectedItem="{Binding SelectedFile, Mode=TwoWay}"
+                    SelectionMode="Single"
+                    EnableRowVirtualization="True"
+                    PreviewMouseRightButtonDown="PipelineQueue_OnPreviewMouseRightButtonDown">
+            <DataGrid.ContextMenu>
+              <ContextMenu DataContext="{Binding PlacementTarget.DataContext, RelativeSource={RelativeSource Self}}">
+                <MenuItem Command="{Binding SkipSelectedCommand}" Header="Skip Selected" />
+                <MenuItem Command="{Binding MarkCompletedManuallyCommand}" Header="Mark Completed Manually" />
+                <MenuItem Command="{Binding StartFromSelectedCommand}" Header="Start From Selected" />
+                <Separator />
+                <MenuItem Command="{Binding UndoManualStatusCommand}" Header="Undo Manual Status" />
+              </ContextMenu>
+            </DataGrid.ContextMenu>
+            <DataGrid.RowStyle>
+              <Style TargetType="DataGridRow">
+                <Style.Triggers>
+                  <DataTrigger Binding="{Binding Status}" Value="Running"><Setter Property="Background" Value="#FFF8E1" /></DataTrigger>
+                  <DataTrigger Binding="{Binding Status}" Value="Reviewing"><Setter Property="Background" Value="#E3F2FD" /></DataTrigger>
+                  <DataTrigger Binding="{Binding Status}" Value="Approved"><Setter Property="Background" Value="#E8F5E9" /></DataTrigger>
+                  <DataTrigger Binding="{Binding Status}" Value="ApprovedWithWarnings"><Setter Property="Background" Value="#FFF3E0" /></DataTrigger>
+                  <DataTrigger Binding="{Binding Status}" Value="Blocked"><Setter Property="Background" Value="#FFEBEE" /></DataTrigger>
+                  <DataTrigger Binding="{Binding Status}" Value="NeedsHumanDecision"><Setter Property="Background" Value="#FCE4EC" /></DataTrigger>
+                  <DataTrigger Binding="{Binding Status}" Value="PrerequisiteMissing"><Setter Property="Background" Value="#FCE4EC" /></DataTrigger>
+                  <DataTrigger Binding="{Binding Status}" Value="ReviewFailed"><Setter Property="Background" Value="#F8D7DA" /></DataTrigger>
+                  <DataTrigger Binding="{Binding Status}" Value="RateLimited"><Setter Property="Background" Value="#EDE7F6" /></DataTrigger>
+                  <DataTrigger Binding="{Binding Status}" Value="Canceled"><Setter Property="Background" Value="#ECEFF1" /></DataTrigger>
+                  <DataTrigger Binding="{Binding Status}" Value="Failed"><Setter Property="Background" Value="#F8D7DA" /></DataTrigger>
+                  <DataTrigger Binding="{Binding Status}" Value="SkippedByUser"><Setter Property="Background" Value="#F2F4F7" /></DataTrigger>
+                  <DataTrigger Binding="{Binding Status}" Value="ManuallyCompleted"><Setter Property="Background" Value="#E6F4EA" /></DataTrigger>
+                </Style.Triggers>
+              </Style>
+            </DataGrid.RowStyle>
+            <DataGrid.Columns>
+              <DataGridTextColumn Width="52" Binding="{Binding Order}" Header="#" />
+              <DataGridTextColumn Width="190" Binding="{Binding FileName}" Header="File" />
+              <DataGridTextColumn Width="130" Binding="{Binding PipelineId}" Header="Pipeline ID" />
+              <DataGridTextColumn Width="90" Binding="{Binding Phase}" Header="Phase" />
+              <DataGridTextColumn Width="180" Binding="{Binding Title}" Header="Title" />
+              <DataGridTextColumn Width="110" Binding="{Binding ExecutionAgent}" Header="Execution agent" />
+              <DataGridTextColumn Width="100" Binding="{Binding ReviewAgent}" Header="Review agent" />
+              <DataGridTextColumn Width="130" Binding="{Binding Dependencies}" Header="Dependencies" />
+              <DataGridTextColumn Width="70" Binding="{Binding Gate}" Header="Gate" />
+              <DataGridTextColumn Width="145" Binding="{Binding Status}" Header="Status" />
+              <DataGridTextColumn Width="120" Binding="{Binding ExecutionResult}" Header="Execution" />
+              <DataGridTextColumn Width="145" Binding="{Binding ReviewVerdict}" Header="Review verdict" />
+              <DataGridTextColumn Width="210" Binding="{Binding ManualStatusIndicator}" Header="Manual status" />
+              <DataGridTextColumn Width="220" Binding="{Binding ManualReason}" Header="Manual reason" />
+              <DataGridTextColumn Width="130" Binding="{Binding ManualTimestampText}" Header="Manual time" />
+              <DataGridTextColumn Width="220" Binding="{Binding ManualEvidencePath}" Header="Evidence" />
+              <DataGridTextColumn Width="125" Binding="{Binding DependencySatisfactionText}" Header="Dependency" />
+              <DataGridTextColumn Width="125" Binding="{Binding GateOverrideText}" Header="Gate override" />
+              <DataGridTextColumn Width="180" Binding="{Binding MissingPrerequisitesText}" Header="Missing prerequisites" />
+              <DataGridTextColumn Width="190" Binding="{Binding RecommendedNextFile}" Header="Recommended next" />
+              <DataGridTextColumn Width="280" Binding="{Binding LastMessage}" Header="Last message" />
+              <DataGridTextColumn Width="80" Binding="{Binding DurationText}" Header="Duration" />
+            </DataGrid.Columns>
+          </DataGrid>
+
+          <Grid Grid.Row="3" Margin="0,12,0,12">
+            <Grid.ColumnDefinitions>
+              <ColumnDefinition Width="2*" />
+              <ColumnDefinition Width="3*" />
+            </Grid.ColumnDefinitions>
+            <GroupBox Grid.Column="0" Margin="0,0,8,0" Header="Pipeline log">
+              <ListBox ItemsSource="{Binding LogEntries}">
+                <ListBox.ItemTemplate>
+                  <DataTemplate>
+                    <TextBlock FontFamily="Consolas" FontSize="12" Text="{Binding DisplayText}" TextWrapping="Wrap" />
+                  </DataTemplate>
+                </ListBox.ItemTemplate>
+              </ListBox>
+            </GroupBox>
+            <GroupBox Grid.Column="1" Header="Current file evidence">
+              <TabControl Margin="8">
+                <TabItem Header="Run details">
+                  <Grid Margin="8">
+                    <Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+                    <Grid.RowDefinitions>
+                      <RowDefinition Height="Auto" /><RowDefinition Height="Auto" /><RowDefinition Height="Auto" />
+                      <RowDefinition Height="Auto" /><RowDefinition Height="Auto" /><RowDefinition Height="Auto" />
+                    </Grid.RowDefinitions>
+                    <TextBlock Grid.Row="0" Grid.Column="0" Margin="0,0,8,5" FontWeight="SemiBold" Text="Source YAML" />
+                    <TextBlock Grid.Row="0" Grid.Column="1" Margin="0,0,0,5" Text="{Binding SelectedFile.FilePath}" TextTrimming="CharacterEllipsis" />
+                    <TextBlock Grid.Row="1" Grid.Column="0" Margin="0,0,8,5" FontWeight="SemiBold" Text="Execution run" />
+                    <TextBlock Grid.Row="1" Grid.Column="1" Margin="0,0,0,5" Text="{Binding SelectedFile.ExecutionRunId}" />
+                    <TextBlock Grid.Row="2" Grid.Column="0" Margin="0,0,8,5" FontWeight="SemiBold" Text="Execution report" />
+                    <TextBlock Grid.Row="2" Grid.Column="1" Margin="0,0,0,5" Text="{Binding SelectedFile.ExecutionReportPath}" TextTrimming="CharacterEllipsis" />
+                    <TextBlock Grid.Row="3" Grid.Column="0" Margin="0,0,8,5" FontWeight="SemiBold" Text="Review YAML" />
+                    <TextBlock Grid.Row="3" Grid.Column="1" Margin="0,0,0,5" Text="{Binding SelectedFile.ReviewYamlPath}" TextTrimming="CharacterEllipsis" />
+                    <TextBlock Grid.Row="4" Grid.Column="0" Margin="0,0,8,5" FontWeight="SemiBold" Text="Review run" />
+                    <TextBlock Grid.Row="4" Grid.Column="1" Margin="0,0,0,5" Text="{Binding SelectedFile.ReviewRunId}" />
+                    <TextBlock Grid.Row="5" Grid.Column="0" Margin="0,0,8,0" FontWeight="SemiBold" Text="Review report" />
+                    <TextBlock Grid.Row="5" Grid.Column="1" Text="{Binding SelectedFile.ReviewReportPath}" TextTrimming="CharacterEllipsis" />
+                  </Grid>
+                </TabItem>
+                <TabItem Header="Findings">
+                  <TextBox Margin="8" IsReadOnly="True" Text="{Binding SelectedFile.FindingsText, Mode=OneWay}" TextWrapping="Wrap" VerticalScrollBarVisibility="Auto" />
+                </TabItem>
+                <TabItem Header="Required decisions">
+                  <TextBox Margin="8" IsReadOnly="True" Text="{Binding SelectedFile.RequiredDecisionsText, Mode=OneWay}" TextWrapping="Wrap" VerticalScrollBarVisibility="Auto" />
+                </TabItem>
+                <TabItem Header="Manual status">
+                  <Grid Margin="8">
+                    <Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+                    <Grid.RowDefinitions>
+                      <RowDefinition Height="Auto" /><RowDefinition Height="Auto" /><RowDefinition Height="Auto" />
+                      <RowDefinition Height="Auto" /><RowDefinition Height="Auto" /><RowDefinition Height="Auto" />
+                    </Grid.RowDefinitions>
+                    <TextBlock Grid.Row="0" Grid.Column="0" Margin="0,0,8,5" FontWeight="SemiBold" Text="Status" />
+                    <TextBlock Grid.Row="0" Grid.Column="1" Margin="0,0,0,5" Text="{Binding SelectedFile.ManualStatusIndicator}" TextWrapping="Wrap" />
+                    <TextBlock Grid.Row="1" Grid.Column="0" Margin="0,0,8,5" FontWeight="SemiBold" Text="Reason" />
+                    <TextBlock Grid.Row="1" Grid.Column="1" Margin="0,0,0,5" Text="{Binding SelectedFile.ManualReason}" TextWrapping="Wrap" />
+                    <TextBlock Grid.Row="2" Grid.Column="0" Margin="0,0,8,5" FontWeight="SemiBold" Text="Timestamp" />
+                    <TextBlock Grid.Row="2" Grid.Column="1" Margin="0,0,0,5" Text="{Binding SelectedFile.ManualTimestampText}" />
+                    <TextBlock Grid.Row="3" Grid.Column="0" Margin="0,0,8,5" FontWeight="SemiBold" Text="Evidence" />
+                    <TextBlock Grid.Row="3" Grid.Column="1" Margin="0,0,0,5" Text="{Binding SelectedFile.ManualEvidencePath}" TextWrapping="Wrap" />
+                    <TextBlock Grid.Row="4" Grid.Column="0" Margin="0,0,8,5" FontWeight="SemiBold" Text="Dependency" />
+                    <TextBlock Grid.Row="4" Grid.Column="1" Margin="0,0,0,5" Text="{Binding SelectedFile.DependencySatisfactionText}" />
+                    <TextBlock Grid.Row="5" Grid.Column="0" Margin="0,0,8,0" FontWeight="SemiBold" Text="Gate override" />
+                    <TextBlock Grid.Row="5" Grid.Column="1" Text="{Binding SelectedFile.GateOverrideText}" />
+                  </Grid>
+                </TabItem>
+              </TabControl>
+            </GroupBox>
+          </Grid>
+
+          <DockPanel Grid.Row="4" LastChildFill="True">
+            <WrapPanel DockPanel.Dock="Right" Orientation="Horizontal">
+              <Button Width="112" Margin="8,0,0,0" Command="{Binding OpenSourceYamlCommand}" Content="Open Source YAML" />
+              <Button Width="132" Margin="8,0,0,0" Command="{Binding OpenExecutionReportCommand}" Content="Open Execution Report" />
+              <Button Width="112" Margin="8,0,0,0" Command="{Binding OpenReviewYamlCommand}" Content="Open Review YAML" />
+              <Button Width="122" Margin="8,0,0,0" Command="{Binding OpenReviewReportCommand}" Content="Open Review Report" />
+              <Button Width="106" Margin="8,0,0,0" Command="{Binding OpenGitDiffCommand}" Content="Open Git Diff" />
+              <Button Width="112" Margin="8,0,0,0" Command="{Binding OpenRunFolderCommand}" Content="Open Run Folder" />
+            </WrapPanel>
+            <TextBlock VerticalAlignment="Center" Text="{Binding PipelineReportPath}" TextTrimming="CharacterEllipsis" />
+          </DockPanel>
+        </Grid>
+      </TabItem>
+    </TabControl>
 </Window>

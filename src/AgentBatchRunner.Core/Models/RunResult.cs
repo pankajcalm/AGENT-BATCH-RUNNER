@@ -22,6 +22,8 @@ public sealed class RunResult
 
     public List<AgentToolchainInfo> Toolchains { get; set; } = [];
 
+    public List<AgentRoutingChange> RoutingChanges { get; set; } = [];
+
     public List<TaskRunResult> Tasks { get; set; } = [];
 
     public int TotalPrompts => Tasks.Count;
@@ -38,11 +40,19 @@ public sealed class RunResult
 
     public int ToolchainFailures => Tasks.Count(t => t.Status == RunStatus.ToolchainFailure);
 
+    public int Blocked => Tasks.Count(t => t.Status == RunStatus.Blocked);
+
+    public int NeedsHumanDecision => Tasks.Count(t => t.Status == RunStatus.NeedsHumanDecision);
+
+    public int PrerequisiteMissing => Tasks.Count(t => t.Status == RunStatus.PrerequisiteMissing);
+
     public int Skipped => Tasks.Count(t => t.Status == RunStatus.Skipped);
 
     public int TimedOutTasks => Tasks.Count(t => t.TimedOut);
 
     public int TimedOutAttempts => Tasks.Sum(t => t.Attempts.Count(a => a.TimedOut));
+
+    public int AgentSwitches => RoutingChanges.Count;
 }
 
 public sealed class TaskRunResult
@@ -52,6 +62,18 @@ public sealed class TaskRunResult
     public string Title { get; set; } = string.Empty;
 
     public string Agent { get; set; } = string.Empty;
+
+    public string BaseAgent { get; set; } = string.Empty;
+
+    public string EffectiveAgent { get; set; } = string.Empty;
+
+    public AgentRoutingReason RoutingReason { get; set; }
+
+    public string? LatestAttemptAgent { get; set; }
+
+    public int AgentSwitchCount { get; set; }
+
+    public int RetryAttemptsConsumed { get; set; }
 
     public string? ConfiguredAgent { get; set; }
 
@@ -84,4 +106,12 @@ public sealed class TaskRunResult
     public DateTimeOffset? RateLimitResetAt { get; set; }
 
     public string? RateLimitReason { get; set; }
+
+    public string? RateLimitedSourceAgent { get; set; }
+
+    public string? FallbackAgent { get; set; }
+
+    public AgentOutcomeInfo? AgentOutcome { get; set; }
+
+    public string? RecommendedNextFile { get; set; }
 }

@@ -79,6 +79,38 @@ public sealed class AgentAdapterArgumentTests
     }
 
     [Fact]
+    public void Codex_LaterInvocationForAgentSwitch_StartsFreshSession()
+    {
+        var request = new AgentExecutionRequest
+        {
+            Prompt = "Continue partial work.",
+            AttemptNumber = 2,
+            ResumeSession = false,
+            SessionId = null
+        };
+
+        var args = CodexAdapter.BuildArguments(request);
+
+        Assert.Equal(["exec", "Continue partial work."], args);
+        Assert.False(CodexAdapter.UsesLastSessionFallback(request));
+    }
+
+    [Fact]
+    public void Claude_LaterInvocationForAgentSwitch_StartsFreshSession()
+    {
+        var args = ClaudeCodeAdapter.BuildArguments(new AgentExecutionRequest
+        {
+            Prompt = "Continue partial work.",
+            AttemptNumber = 3,
+            ResumeSession = false,
+            SessionId = "session-from-other-agent"
+        });
+
+        Assert.DoesNotContain("--resume", args);
+        Assert.Equal(["-p", "Continue partial work.", "--output-format", "json"], args);
+    }
+
+    [Fact]
     public void Claude_AppliesConfiguredPermissionMode()
     {
         var args = ClaudeCodeAdapter.BuildArguments(new AgentExecutionRequest

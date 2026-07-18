@@ -2,6 +2,8 @@ namespace AgentBatchRunner.Models;
 
 public sealed class BatchConfig
 {
+    public PipelineMetadata? Pipeline { get; set; }
+
     public string Project { get; set; } = string.Empty;
 
     public string RepoPath { get; set; } = string.Empty;
@@ -23,6 +25,13 @@ public sealed class BatchConfig
     public int DefaultAgentTimeoutSeconds { get; set; } = 1800;
 
     public int DefaultVerifyTimeoutSeconds { get; set; } = 900;
+
+    public bool AutoSwitchOnRateLimit { get; set; }
+
+    public int MaxRateLimitAgentSwitchesPerTask { get; set; } = 1;
+
+    public Dictionary<string, List<string>> RateLimitFallbacks { get; set; } =
+        new(StringComparer.OrdinalIgnoreCase);
 
     /// <summary>
     /// Legacy generic command timeout. Retained for compatibility with older normalized run

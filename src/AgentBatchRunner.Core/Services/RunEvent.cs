@@ -18,6 +18,22 @@ public sealed class RunEvent
 
     public string? Agent { get; set; }
 
+    public string? BaseAgent { get; set; }
+
+    public string? EffectiveAgent { get; set; }
+
+    public string? AttemptAgent { get; set; }
+
+    public AgentRoutingReason? RoutingReason { get; set; }
+
+    public string? SourceAgent { get; set; }
+
+    public string? ReplacementAgent { get; set; }
+
+    public IReadOnlyList<string> AffectedPromptIds { get; set; } = [];
+
+    public bool IsAutomaticRoutingChange { get; set; }
+
     public int? AttemptNumber { get; set; }
 
     public int? MaxAttempts { get; set; }
@@ -49,4 +65,6 @@ public sealed class RunEvent
     public DateTimeOffset? RateLimitResetAt { get; set; }
 
     public string? RateLimitReason { get; set; }
+
+    public AgentOutcomeInfo? AgentOutcome { get; set; }
 }

@@ -592,6 +592,67 @@ public sealed class BatchRunnerTests
         Assert.DoesNotContain("\u00c3", await Utf8File.ReadAllTextAsync(Path.Combine(task.TaskDirectory, "attempts", "attempt-1", "agent-output.txt")));
     }
 
+    [Theory]
+    [InlineData("Blocked", RunStatus.Blocked)]
+    [InlineData("NeedsHumanDecision", RunStatus.NeedsHumanDecision)]
+    [InlineData("PrerequisiteMissing", RunStatus.PrerequisiteMissing)]
+    public async Task RunAsync_ExplicitWorkflowOutcome_DoesNotRetryOrVerify(
+        string outcome,
+        RunStatus expectedStatus)
+    {
+        using var repo = TestWorkspace.CreateGitRepository();
+        var adapter = new CountingAgentAdapter("dryrun", new AgentExecutionResult
+        {
+            AgentName = "dryrun",
+            Command = "fake-agent",
+            ExitCode = 0,
+            StandardOutput =
+                $"{{\"agentOutcome\":\"{outcome}\",\"blockerCode\":\"GATE\",\"blocker\":\"Gate cannot advance.\",\"recommendedNext\":\"repair.yaml\"}}"
+        });
+        var config = new BatchConfig
+        {
+            Project = "Outcome",
+            RepoPath = repo.Root,
+            DefaultAgent = "dryrun",
+            DefaultMaxRetries = 3,
+            Prompts =
+            [
+                new PromptTask
+                {
+                    Id = "P001",
+                    Title = "Blocked task",
+                    Prompt = "Inspect prerequisites.",
+                    Verify = ["exit 99"]
+                },
+                new PromptTask
+                {
+                    Id = "P002",
+                    Title = "Must not run",
+                    Prompt = "Later work.",
+                    Verify = ["exit 0"]
+                }
+            ]
+        };
+
+        var result = await CreateBatchRunner(new TestAgentAdapterFactory(adapter))
+            .RunAsync(config, new RunOptions());
+
+        Assert.Equal(1, adapter.CallCount);
+        var blocked = result.Tasks.Single(task => task.Id == "P001");
+        Assert.Equal(expectedStatus, blocked.Status);
+        var attempt = Assert.Single(blocked.Attempts);
+        Assert.False(attempt.ConsumesRetry);
+        Assert.Equal(0, blocked.RetryAttemptsConsumed);
+        Assert.Null(attempt.VerificationResult);
+        Assert.Equal("repair.yaml", blocked.RecommendedNextFile);
+        Assert.Equal(RunStatus.Skipped, result.Tasks.Single(task => task.Id == "P002").Status);
+        Assert.Equal(RunFailureKind.AgentOutcomeBlocked, result.FailureKind);
+        var report = await Utf8File.ReadAllTextAsync(
+            Path.Combine(repo.Root, ".agentbatchrunner", "runs", result.RunId, "final-report.md"));
+        Assert.Contains(outcome, report);
+        Assert.Contains("repair.yaml", report);
+    }
+
     private static BatchRunner CreateBatchRunner(
         AgentAdapterFactory? agentAdapterFactory = null,
         IRunEventSink? eventSink = null,
@@ -611,7 +672,8 @@ public sealed class BatchRunnerTests
             agentAdapterFactory ?? new AgentAdapterFactory(processRunner, logger),
             logger,
             eventSink,
-            rateLimitStateStore: rateLimitStateStore,
+            rateLimitStateStore: rateLimitStateStore ?? new AgentRateLimitStateStore(
+                Path.Combine(Path.GetTempPath(), "AgentBatchRunner.Tests", Guid.NewGuid().ToString("N"), "agent-rate-limits.json")),
             agentPreflightService: preflightService ?? NoOpAgentPreflightService.Instance);
     }
 

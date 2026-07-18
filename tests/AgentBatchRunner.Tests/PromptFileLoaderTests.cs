@@ -1,5 +1,6 @@
 using AgentBatchRunner.Models;
 using AgentBatchRunner.Services;
+using AgentBatchRunner.Infrastructure;
 
 namespace AgentBatchRunner.Tests;
 
@@ -197,5 +198,78 @@ public sealed class PromptFileLoaderTests
         Assert.Contains($"10{enDash}20", config.Prompts[0].Prompt);
         Assert.Contains($"{smartQuoteOpen}quoted text{smartQuoteClose}", config.Prompts[0].Prompt);
         Assert.Contains('\n', config.Prompts[0].Prompt);
+    }
+
+    [Fact]
+    public async Task LoadAsync_ParsesOptInRateLimitFallbackConfiguration()
+    {
+        using var temp = TestWorkspace.Create();
+        var yamlPath = Path.Combine(temp.Root, "fallback.yaml");
+        await Utf8File.WriteAllTextAsync(
+            yamlPath,
+            $$"""
+            project: Fallback
+            repoPath: '{{temp.Root}}'
+            defaultAgent: claude
+            autoSwitchOnRateLimit: true
+            maxRateLimitAgentSwitchesPerTask: 1
+            rateLimitFallbacks:
+              claude:
+                - codex
+            prompts:
+              - id: P001
+                title: Task
+                prompt: Do it.
+                verify: []
+            """);
+
+        var loader = new PromptFileLoader();
+        var config = await loader.LoadAsync(yamlPath);
+        var validation = loader.Validate(config);
+
+        Assert.True(validation.IsValid, string.Join(Environment.NewLine, validation.Errors));
+        Assert.True(config.AutoSwitchOnRateLimit);
+        Assert.Equal(1, config.MaxRateLimitAgentSwitchesPerTask);
+        Assert.Equal(["codex"], config.RateLimitFallbacks["claude"]);
+    }
+
+    [Fact]
+    public void Validate_RejectsUnsupportedFallbackAgent()
+    {
+        var config = ValidFallbackConfig();
+        config.RateLimitFallbacks["claude"] = ["unknown-agent"];
+
+        var validation = new PromptFileLoader().Validate(config);
+
+        Assert.False(validation.IsValid);
+        Assert.Contains(validation.Errors, error => error.Contains("unsupported", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public void Validate_RejectsCyclicFallbackGraph()
+    {
+        var config = ValidFallbackConfig();
+        config.RateLimitFallbacks["codex"] = ["claude"];
+
+        var validation = new PromptFileLoader().Validate(config);
+
+        Assert.False(validation.IsValid);
+        Assert.Contains(validation.Errors, error => error.Contains("cycle", StringComparison.OrdinalIgnoreCase));
+    }
+
+    private static BatchConfig ValidFallbackConfig()
+    {
+        return new BatchConfig
+        {
+            Project = "Demo",
+            RepoPath = @"C:\repo",
+            DefaultAgent = "claude",
+            AutoSwitchOnRateLimit = true,
+            RateLimitFallbacks = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["claude"] = ["codex"]
+            },
+            Prompts = [new PromptTask { Id = "P001", Title = "Task", Prompt = "Do it." }]
+        };
     }
 }

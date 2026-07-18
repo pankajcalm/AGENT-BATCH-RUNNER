@@ -49,7 +49,7 @@ public sealed class CodexAdapter(ProcessRunner processRunner, ConsoleLogger logg
     /// </summary>
     public static bool UsesLastSessionFallback(AgentExecutionRequest request)
     {
-        return request.AttemptNumber > 1 && string.IsNullOrWhiteSpace(request.SessionId);
+        return request.ShouldResumeSession && string.IsNullOrWhiteSpace(request.SessionId);
     }
 
     /// <summary>
@@ -61,7 +61,7 @@ public sealed class CodexAdapter(ProcessRunner processRunner, ConsoleLogger logg
     {
         var arguments = new List<string> { "exec" };
 
-        if (request.AttemptNumber > 1)
+        if (request.ShouldResumeSession)
         {
             // Retries resume the original session, which already carries its sandbox/approval
             // settings, so the sandbox flags are only applied to the initial invocation below.

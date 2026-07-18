@@ -12,5 +12,7 @@ public sealed class RunOptions
 
     public RunResult? ExistingResult { get; set; }
 
+    public IRunAgentRoutingController? RoutingController { get; set; }
+
     public ISet<string> SkipPromptIds { get; set; } = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 }

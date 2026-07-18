@@ -44,6 +44,39 @@ public static class RetryPromptBuilder
             """;
     }
 
+    public static string BuildRateLimitFallback(
+        string originalPrompt,
+        string previousAgent,
+        string previousOutput)
+    {
+        var redactedOutput = Truncate(SensitiveDataRedactor.Redact(previousOutput));
+        return
+            $"""
+            The previous agent became rate-limited while working on this task.
+
+            Original task:
+            {originalPrompt}
+
+            Previous agent:
+            {previousAgent}
+
+            Previous output:
+            {redactedOutput}
+
+            The working tree may contain partially completed changes.
+            Inspect the current state and continue the task without discarding correct work.
+            Do not make unrelated changes.
+            """;
+    }
+
+    private static string Truncate(string output)
+    {
+        return output.Length <= MaxOutputCharacters
+            ? output
+            : output[^MaxOutputCharacters..] + Environment.NewLine +
+              "[Output truncated to the last 24000 characters.]";
+    }
+
     private static string BuildTimeoutSection(TimeSpan? timeout)
     {
         var duration = timeout.HasValue

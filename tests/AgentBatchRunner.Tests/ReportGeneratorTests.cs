@@ -28,8 +28,13 @@ public sealed class ReportGeneratorTests
                     Id = "P001",
                     Title = "Task",
                     Agent = "dryrun",
+                    BaseAgent = "dryrun",
+                    EffectiveAgent = "dryrun",
+                    RoutingReason = AgentRoutingReason.Default,
+                    LatestAttemptAgent = "dryrun",
+                    RetryAttemptsConsumed = 1,
                     Status = RunStatus.Succeeded,
-                    Attempts = [new AttemptResult { AttemptNumber = 1 }]
+                    Attempts = [new AttemptResult { AttemptNumber = 1, AttemptAgent = "dryrun" }]
                 }
             ]
         };
@@ -41,7 +46,7 @@ public sealed class ReportGeneratorTests
         Assert.True(File.Exists(Path.Combine(runDirectory, "run-summary.json")));
         var markdown = await File.ReadAllTextAsync(reportPath);
         Assert.Contains("# AgentBatchRunner Final Report", markdown);
-        Assert.Contains("| P001 | Task | (none) | (none) | (none) | dryrun | 1 | Succeeded |", markdown);
+        Assert.Contains("| P001 | Task | (none) | (none) | (none) | dryrun | dryrun | Default | dryrun | (none) | (none) | 1 | 1 | Succeeded |", markdown);
     }
 
     [Fact]

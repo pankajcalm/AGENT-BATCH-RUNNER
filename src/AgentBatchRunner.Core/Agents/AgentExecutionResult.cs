@@ -1,3 +1,5 @@
+using AgentBatchRunner.Models;
+
 namespace AgentBatchRunner.Agents;
 
 public sealed class AgentExecutionResult
@@ -30,7 +32,19 @@ public sealed class AgentExecutionResult
 
     public string? ToolchainFailureReason { get; set; }
 
-    public bool Succeeded => ExitCode == 0 && !IsRateLimited && !IsToolchainFailure;
+    public AgentOutcomeInfo? Outcome { get; set; }
+
+    public bool Succeeded => ExitCode == 0 &&
+                             !IsRateLimited &&
+                             !IsToolchainFailure &&
+                             Outcome?.AgentOutcome is not (
+                                 AgentOutcome.Failed or
+                                 AgentOutcome.Blocked or
+                                 AgentOutcome.NeedsHumanDecision or
+                                 AgentOutcome.PrerequisiteMissing or
+                                 AgentOutcome.RateLimited or
+                                 AgentOutcome.Canceled or
+                                 AgentOutcome.TimedOut);
 
     public string CombinedOutput
     {

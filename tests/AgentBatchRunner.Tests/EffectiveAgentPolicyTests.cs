@@ -31,7 +31,11 @@ public sealed class EffectiveAgentPolicyTests
         var selections = _policy.ResolveAll(config, runOverride: null);
 
         Assert.Equal("claude", selections[0].EffectiveAgent);
+        Assert.Equal("claude", selections[0].BaseAgent);
+        Assert.Equal(AgentRoutingReason.Yaml, selections[0].BaseRoutingReason);
         Assert.Equal("codex", selections[1].EffectiveAgent);
+        Assert.Equal("codex", selections[1].BaseAgent);
+        Assert.Equal(AgentRoutingReason.Default, selections[1].BaseRoutingReason);
     }
 
     [Fact]
@@ -44,6 +48,7 @@ public sealed class EffectiveAgentPolicyTests
         var selections = _policy.ResolveAll(config, "dryrun");
 
         Assert.All(selections, selection => Assert.Equal("dryrun", selection.EffectiveAgent));
+        Assert.All(selections, selection => Assert.Equal(AgentRoutingReason.GlobalOverride, selection.BaseRoutingReason));
         Assert.Contains("Overrides the agent for every prompt", AgentRoutingMode.Describe("dryrun"));
         Assert.Equal("dryrun", AgentRoutingMode.ToOverride("Global override: dryrun"));
     }

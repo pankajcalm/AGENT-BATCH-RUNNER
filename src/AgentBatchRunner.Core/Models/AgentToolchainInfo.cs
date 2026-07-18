@@ -24,5 +24,6 @@ public enum RunFailureKind
 {
     None,
     PreflightFailed,
-    ToolchainFailure
+    ToolchainFailure,
+    AgentOutcomeBlocked
 }
